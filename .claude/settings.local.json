@@ -7,7 +7,12 @@
       "Bash(mkdir:*)",
       "Bash(flutter run:*)",
       "Bash(flutter analyze:*)",
-      "Bash(firebase init:*)"
+      "Bash(firebase init:*)",
+      "Bash(ls:*)",
+      "Bash(echo $SHELL)",
+      "Bash(/snap/bin/flutter:*)",
+      "Bash(dart:*)",
+      "Bash(flutter build:*)"
     ],
     "deny": []
   }

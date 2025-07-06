@@ -10,7 +10,11 @@ class Countdown {
   final int participantsCount;
   final int likesCount;
   final int commentsCount;
-  final int? commentCount; // 互換性のため追加
+  final int viewsCount;
+  final int recentCommentsCount; // 24時間以内のコメント数
+  final int recentLikesCount;    // 24時間以内のいいね数
+  final int recentViewsCount;    // 24時間以内の閲覧数
+  final int? commentCount;       // 互換性のため追加
 
   Countdown({
     required this.id,
@@ -22,6 +26,10 @@ class Countdown {
     this.participantsCount = 0,
     this.likesCount = 0,
     this.commentsCount = 0,
+    this.viewsCount = 0,
+    this.recentCommentsCount = 0,
+    this.recentLikesCount = 0,
+    this.recentViewsCount = 0,
     this.commentCount,
   });
 
@@ -40,6 +48,10 @@ class Countdown {
       participantsCount: data?['participantsCount'] as int? ?? 0,
       likesCount: data?['likesCount'] as int? ?? 0,
       commentsCount: data?['commentsCount'] as int? ?? 0,
+      viewsCount: data?['viewsCount'] as int? ?? 0,
+      recentCommentsCount: data?['recentCommentsCount'] as int? ?? 0,
+      recentLikesCount: data?['recentLikesCount'] as int? ?? 0,
+      recentViewsCount: data?['recentViewsCount'] as int? ?? 0,
       commentCount: data?['commentCount'] as int? ?? data?['commentsCount'] as int? ?? 0,
     );
   }
@@ -54,6 +66,10 @@ class Countdown {
       "participantsCount": participantsCount,
       "likesCount": likesCount,
       "commentsCount": commentsCount,
+      "viewsCount": viewsCount,
+      "recentCommentsCount": recentCommentsCount,
+      "recentLikesCount": recentLikesCount,
+      "recentViewsCount": recentViewsCount,
     };
   }
 }

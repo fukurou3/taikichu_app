@@ -6,12 +6,14 @@ import 'firebase_options.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'screens/create_countdown_screen.dart';
+import 'screens/countdown_search_screen.dart';
 import 'screens/thread_screen.dart';
 import 'screens/trend_ranking_screen.dart';
 import 'services/countdown_service.dart';
 import 'services/trend_ranking_service.dart';
 import 'services/optimized_stream_service.dart';
 import 'widgets/countdown_card.dart';
+import 'widgets/enhanced_countdown_card.dart';
 import 'widgets/trend_ranking_card.dart';
 import 'widgets/paginated_countdown_list.dart';
 import 'models/countdown.dart';
@@ -155,13 +157,11 @@ class _MyHomePageState extends State<MyHomePage> {
               ),
             ),
           ),
-          StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance
-                .collection('trendRankings')
-                .where('category', isEqualTo: 'overall')
-                .orderBy('rank')
-                .limit(3)
-                .snapshots(),
+          FutureBuilder<List<TrendRanking>>(
+            future: TrendRankingService.getTrendRankings(
+              type: RankingType.overall,
+              limit: 3,
+            ),
             builder: (context, snapshot) {
               if (snapshot.hasError) {
                 return SliverToBoxAdapter(
@@ -175,19 +175,19 @@ class _MyHomePageState extends State<MyHomePage> {
                   child: Center(child: CircularProgressIndicator()),
                 );
               }
-              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+
+              final rankings = snapshot.data ?? [];
+              
+              if (rankings.isEmpty) {
                 return const SliverToBoxAdapter(
                   child: Center(child: Text('まだトレンドはありません。')),
                 );
               }
 
-              final rankingDocs = snapshot.data!.docs;
-
               return SliverList(
                 delegate: SliverChildBuilderDelegate(
                   (context, index) {
-                    final doc = rankingDocs[index];
-                    final data = doc.data() as Map<String, dynamic>;
+                    final ranking = rankings[index];
                     
                     return Card(
                       margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
@@ -197,36 +197,44 @@ class _MyHomePageState extends State<MyHomePage> {
                           backgroundColor: index == 0 ? Colors.amber : 
                                           index == 1 ? Colors.grey[400] :
                                           Colors.brown[300],
-                          child: Text('${index + 1}'),
+                          child: Text('${ranking.rank}'),
                         ),
-                        title: Text(data['eventName'] ?? ''),
-                        subtitle: Text('カテゴリ: ${data['category'] ?? ''} | スコア: ${data['trendScore']?.toInt() ?? 0}'),
-                        onTap: () async {
-                          final countdownId = data['countdownId'];
-                          if (countdownId != null) {
-                            final countdownDoc = await FirebaseFirestore.instance
-                                .collection('counts')
-                                .doc(countdownId)
-                                .get();
-                            if (countdownDoc.exists) {
-                              final originalCountdown = Countdown.fromFirestore(countdownDoc, null);
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => ThreadScreen(countdown: originalCountdown),
-                                ),
-                              );
-                            } else {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('元のカウントダウンが見つかりません。')),
-                              );
-                            }
-                          }
+                        title: Text(ranking.eventName),
+                        subtitle: Text('カテゴリ: ${ranking.category} | スコア: ${ranking.trendScore.toInt()}'),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.people, size: 16, color: Colors.grey[600]),
+                            Text(' ${ranking.participantsCount}'),
+                            const SizedBox(width: 8),
+                            Icon(Icons.comment, size: 16, color: Colors.grey[600]),
+                            Text(' ${ranking.commentsCount}'),
+                            const SizedBox(width: 8),
+                            Icon(Icons.favorite, size: 16, color: Colors.red[400]),
+                            Text(' ${ranking.participantsCount}'),
+                          ],
+                        ),
+                        onTap: () {
+                          final countdown = Countdown(
+                            id: ranking.countdownId,
+                            eventName: ranking.eventName,
+                            eventDate: ranking.eventDate,
+                            category: ranking.category,
+                            creatorId: '',
+                            participantsCount: ranking.participantsCount,
+                            commentsCount: ranking.commentsCount,
+                          );
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => ThreadScreen(countdown: countdown),
+                            ),
+                          );
                         },
                       ),
                     );
                   },
-                  childCount: rankingDocs.length,
+                  childCount: rankings.length,
                 ),
               );
             },
@@ -244,11 +252,11 @@ class _MyHomePageState extends State<MyHomePage> {
               ),
             ),
           ),
-          StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance
-                .collection('counts')
-                .orderBy('eventDate', descending: false)
-                .snapshots(),
+          StreamBuilder<List<Countdown>>(
+            stream: OptimizedStreamService.getBatchedCountdownsStream(
+              limit: 20,
+              batchInterval: const Duration(seconds: 3),
+            ),
             builder: (context, snapshot) {
               if (snapshot.hasError) {
                 return SliverToBoxAdapter(
@@ -260,7 +268,10 @@ class _MyHomePageState extends State<MyHomePage> {
                   child: Center(child: CircularProgressIndicator()),
                 );
               }
-              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+
+              final countdowns = snapshot.data ?? [];
+              
+              if (countdowns.isEmpty) {
                 return const SliverToBoxAdapter(
                   child: Center(
                     child: Text(
@@ -272,95 +283,14 @@ class _MyHomePageState extends State<MyHomePage> {
                 );
               }
 
-              final countdownDocs = snapshot.data!.docs;
-
               return SliverList(
                 delegate: SliverChildBuilderDelegate(
                   (context, index) {
-                    final doc = countdownDocs[index];
-                    final data = doc.data() as Map<String, dynamic>;
-                    final countdown = Countdown(
-                      id: doc.id,
-                      eventName: data['eventName'] ?? '',
-                      eventDate: (data['eventDate'] as Timestamp).toDate(),
-                      category: data['category'] ?? '',
-                      creatorId: data['creatorId'] ?? '',
-                      participantsCount: data['participantsCount'] ?? 0,
-                      likesCount: data['likesCount'] ?? 0,
-                      commentsCount: data['commentsCount'] ?? 0,
-                    );
+                    final countdown = countdowns[index];
                     
-                    return GestureDetector(
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => ThreadScreen(countdown: countdown)),
-                        );
-                      },
-                      child: Card(
-                        margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 8.0),
-                        elevation: 4.0,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                countdown.eventName,
-                                style: const TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'イベント日時: ${countdown.eventDate.toLocal().toString().split(' ')[0]}',
-                                style: const TextStyle(fontSize: 16, color: Colors.grey),
-                              ),
-                              Text(
-                                'カテゴリ: ${countdown.category}',
-                                style: const TextStyle(fontSize: 16, color: Colors.grey),
-                              ),
-                              const SizedBox(height: 8),
-                              _buildCountdownText(countdown.eventDate),
-                              const SizedBox(height: 8),
-                              Align(
-                                alignment: Alignment.bottomRight,
-                                child: Text(
-                                  '${countdown.participantsCount} 人が待機中',
-                                  style: const TextStyle(fontSize: 14, color: Colors.blue),
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Align(
-                                alignment: Alignment.bottomRight,
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.comment_outlined, size: 16, color: Colors.grey[600]),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      '${countdown.commentsCount} コメント',
-                                      style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Icon(Icons.favorite_border, size: 16, color: Colors.grey[600]),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      '${countdown.likesCount}',
-                                      style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
+                    return EnhancedCountdownCard(countdown: countdown);
                   },
-                  childCount: countdownDocs.length,
+                  childCount: countdowns.length,
                 ),
               );
             },
@@ -371,7 +301,7 @@ class _MyHomePageState extends State<MyHomePage> {
         onPressed: () {
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (context) => const CreateCountdownScreen()),
+            MaterialPageRoute(builder: (context) => const CountdownSearchScreen()),
           );
         },
         tooltip: '新しいカウントダウンを作成',

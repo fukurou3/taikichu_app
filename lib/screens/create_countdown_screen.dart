@@ -4,7 +4,16 @@ import '../models/countdown.dart';
 import '../services/countdown_service.dart';
 
 class CreateCountdownScreen extends StatefulWidget {
-  const CreateCountdownScreen({super.key});
+  final String? preFilledEventName;
+  final String? preFilledCategory;
+  final DateTime? preFilledEventDate;
+
+  const CreateCountdownScreen({
+    super.key,
+    this.preFilledEventName,
+    this.preFilledCategory,
+    this.preFilledEventDate,
+  });
 
   @override
   State<CreateCountdownScreen> createState() => _CreateCountdownScreenState();
@@ -23,6 +32,21 @@ class _CreateCountdownScreenState extends State<CreateCountdownScreen> {
     '推し活',
     'その他'
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    // 事前入力データがあれば設定
+    if (widget.preFilledEventName != null) {
+      _eventNameController.text = widget.preFilledEventName!;
+    }
+    if (widget.preFilledCategory != null) {
+      _selectedCategory = widget.preFilledCategory;
+    }
+    if (widget.preFilledEventDate != null) {
+      _selectedDate = widget.preFilledEventDate;
+    }
+  }
 
   Future<void> _selectDate(BuildContext context) async {
     final DateTime? picked = await showDatePicker(

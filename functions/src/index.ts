@@ -117,6 +117,62 @@ export const onLikeDelete = functions.firestore
   });
 
 /**
+ * 閲覧数トラッキングのトリガー関数
+ * viewsコレクションにドキュメントが作成されたときに、
+ * 対応するカウントダウンのviewsCountを更新
+ */
+export const onViewCreate = functions.firestore
+  .document("views/{viewId}")
+  .onCreate(async (snapshot, context) => {
+    try {
+      const viewData = snapshot.data();
+      const countdownId = viewData.countdownId;
+
+      if (!countdownId) {
+        console.error("countdownId is missing in view data");
+        return;
+      }
+
+      // カウントダウンのviewsCountを+1
+      await db.collection("counts").doc(countdownId).update({
+        viewsCount: admin.firestore.FieldValue.increment(1),
+      });
+
+      console.log(`Updated viewsCount for countdown: ${countdownId}`);
+    } catch (error) {
+      console.error("Error updating views count:", error);
+    }
+  });
+
+/**
+ * 最近の閲覧数トラッキングのトリガー関数
+ * recentViewsコレクションにドキュメントが作成されたときに、
+ * 対応するカウントダウンのrecentViewsCountを更新
+ */
+export const onRecentViewCreate = functions.firestore
+  .document("recentViews/{viewId}")
+  .onCreate(async (snapshot, context) => {
+    try {
+      const viewData = snapshot.data();
+      const countdownId = viewData.countdownId;
+
+      if (!countdownId) {
+        console.error("countdownId is missing in recent view data");
+        return;
+      }
+
+      // カウントダウンのrecentViewsCountを+1
+      await db.collection("counts").doc(countdownId).update({
+        recentViewsCount: admin.firestore.FieldValue.increment(1),
+      });
+
+      console.log(`Updated recentViewsCount for countdown: ${countdownId}`);
+    } catch (error) {
+      console.error("Error updating recent views count:", error);
+    }
+  });
+
+/**
  * 定期的なトレンドランキング更新関数
  * Cloud Schedulerから5分ごとに実行される
  */
