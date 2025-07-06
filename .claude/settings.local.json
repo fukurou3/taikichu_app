@@ -13,7 +13,9 @@
       "Bash(/snap/bin/flutter:*)",
       "Bash(dart:*)",
       "Bash(flutter build:*)",
-      "Bash(firebase deploy:*)"
+      "Bash(firebase deploy:*)",
+      "Bash(flutter:*)",
+      "Bash(/mnt/c/Users/fukur/flutter/bin/flutter analyze)"
     ],
     "deny": []
   }

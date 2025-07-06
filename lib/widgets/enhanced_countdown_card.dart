@@ -3,6 +3,7 @@ import '../models/countdown.dart';
 import '../screens/thread_screen.dart';
 import '../services/countdown_like_service.dart';
 import '../services/view_tracking_service.dart';
+import '../services/participant_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class EnhancedCountdownCard extends StatefulWidget {
@@ -18,12 +19,49 @@ class _EnhancedCountdownCardState extends State<EnhancedCountdownCard> {
   bool _isLiked = false;
   int _likesCount = 0;
   bool _isLoading = false;
+  bool _isParticipating = false;
+  bool _isParticipantLoading = false;
 
   @override
   void initState() {
     super.initState();
     _loadLikeStatus();
+    _loadParticipationStatus();
     _trackView();
+  }
+
+  Future<void> _loadParticipationStatus() async {
+    try {
+      final isParticipating = await ParticipantService.isParticipating(widget.countdown.id);
+      setState(() {
+        _isParticipating = isParticipating;
+      });
+    } catch (e) {
+      print('Error loading participation status: $e');
+    }
+  }
+
+  Future<void> _toggleParticipation() async {
+    if (_isParticipantLoading) return;
+    
+    setState(() {
+      _isParticipantLoading = true;
+    });
+
+    try {
+      final newStatus = await ParticipantService.participateInCountdown(widget.countdown.id);
+      setState(() {
+        _isParticipating = newStatus;
+      });
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('エラー: $e')),
+      );
+    } finally {
+      setState(() {
+        _isParticipantLoading = false;
+      });
+    }
   }
 
   Future<void> _loadLikeStatus() async {
@@ -150,9 +188,65 @@ class _EnhancedCountdownCardState extends State<EnhancedCountdownCard> {
     );
   }
 
+  Widget _buildParticipantButton() {
+    if (_isParticipantLoading) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation<Color>(
+                _isParticipating ? const Color(0xFF1DA1F2) : Colors.grey[600]!,
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            '${widget.countdown.participantsCount}',
+            style: TextStyle(
+              color: _isParticipating ? const Color(0xFF1DA1F2) : Colors.grey[600],
+              fontSize: 14,
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          _isParticipating ? Icons.people : Icons.people_outline,
+          size: 18,
+          color: _isParticipating ? const Color(0xFF1DA1F2) : Colors.grey[600],
+        ),
+        const SizedBox(width: 4),
+        Text(
+          '${widget.countdown.participantsCount}',
+          style: TextStyle(
+            color: _isParticipating ? const Color(0xFF1DA1F2) : Colors.grey[600],
+            fontSize: 14,
+            fontWeight: _isParticipating ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildDescriptionWithHashtags() {
-    final description = widget.countdown.description!;
+    final description = widget.countdown.description;
+    if (description == null || description.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    
     final hashtags = widget.countdown.hashtags;
+    print('EnhancedCountdownCard - Description: "$description"'); // デバッグ用
+    print('EnhancedCountdownCard - Hashtags: $hashtags'); // デバッグ用
+    print('EnhancedCountdownCard - Description isEmpty: ${description.isEmpty}'); // デバッグ用
+    print('EnhancedCountdownCard - Hashtags count: ${hashtags.length}'); // デバッグ用
     
     // ハッシュタグをハイライト表示するためのSpanを作成
     final spans = <TextSpan>[];
@@ -276,10 +370,8 @@ class _EnhancedCountdownCardState extends State<EnhancedCountdownCard> {
               const SizedBox(height: 8),
 
               // 説明文とハッシュタグ
-              if (widget.countdown.description != null) ...[
-                _buildDescriptionWithHashtags(),
-                const SizedBox(height: 8),
-              ],
+              _buildDescriptionWithHashtags(),
+              const SizedBox(height: 8),
 
               // イベント日時
               Text(
@@ -327,11 +419,10 @@ class _EnhancedCountdownCardState extends State<EnhancedCountdownCard> {
                     '${widget.countdown.commentsCount}',
                     Colors.grey[600]!,
                   ),
-                  // 参加者
-                  _buildActionButton(
-                    Icons.people_outline,
-                    '${widget.countdown.participantsCount}',
-                    Colors.grey[600]!,
+                  // 参加者（タップ可能）
+                  GestureDetector(
+                    onTap: _toggleParticipation,
+                    child: _buildParticipantButton(),
                   ),
                   // いいね
                   GestureDetector(
@@ -341,12 +432,6 @@ class _EnhancedCountdownCardState extends State<EnhancedCountdownCard> {
                       '$_likesCount',
                       _isLiked ? Colors.red : Colors.grey[600]!,
                     ),
-                  ),
-                  // シェア
-                  _buildActionButton(
-                    Icons.ios_share,
-                    '',
-                    Colors.grey[600]!,
                   ),
                 ],
               ),

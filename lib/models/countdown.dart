@@ -79,10 +79,16 @@ class Countdown {
 
   /// 説明文からハッシュタグを抽出
   List<String> get hashtags {
-    if (description == null) return [];
+    if (description == null) {
+      print('Countdown.hashtags - description is null');
+      return [];
+    }
     
+    print('Countdown.hashtags - description: "$description"');
     final regex = RegExp(r'#[^\s#]+');
     final matches = regex.allMatches(description!);
-    return matches.map((match) => match.group(0)!.substring(1)).toList();
+    final hashtagList = matches.map((match) => match.group(0)!.substring(1)).toList();
+    print('Countdown.hashtags - extracted hashtags: $hashtagList');
+    return hashtagList;
   }
 }

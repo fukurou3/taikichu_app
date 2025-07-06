@@ -84,54 +84,35 @@ class _MyHomePageState extends State<MyHomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        title: Text(
-          widget.title,
-          style: const TextStyle(
-            color: Colors.black,
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.add, color: Colors.black),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const CountdownSearchScreen()),
-              );
-            },
-            tooltip: '新しいカウントダウンを作成',
-          ),
-        ],
+      body: SafeArea(
+        child: _screens[_selectedIndex],
       ),
-      body: _screens[_selectedIndex],
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
         backgroundColor: Colors.white,
         currentIndex: _selectedIndex,
         onTap: _onItemTapped,
-        selectedItemColor: const Color(0xFF1DA1F2),
+        selectedItemColor: Colors.black,
         unselectedItemColor: Colors.grey,
+        showSelectedLabels: false,
+        showUnselectedLabels: false,
+        elevation: 0,
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.home),
-            label: 'ホーム',
+            label: '',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.search),
-            label: '検索',
+            label: '',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.notifications),
-            label: '通知',
+            label: '',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.person),
-            label: 'マイページ',
+            label: '',
           ),
         ],
       ),

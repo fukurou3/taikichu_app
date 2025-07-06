@@ -192,12 +192,16 @@ class _CreateCountdownScreenState extends State<CreateCountdownScreen> {
     }
 
     try {
+      final description = _descriptionController.text.trim().isNotEmpty 
+          ? _descriptionController.text.trim() 
+          : null;
+      print('CreateCountdown - Description: "$description"'); // デバッグ用
+      print('CreateCountdown - Description controller text: "${_descriptionController.text}"'); // デバッグ用
+      
       final newCountdown = Countdown(
         id: '',
         eventName: _eventNameController.text.trim(),
-        description: _descriptionController.text.trim().isNotEmpty 
-            ? _descriptionController.text.trim() 
-            : null,
+        description: description,
         eventDate: _selectedDate!,
         category: _selectedCategory!,
         creatorId: user.uid,

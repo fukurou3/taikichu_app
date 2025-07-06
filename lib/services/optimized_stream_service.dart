@@ -88,6 +88,11 @@ class OptimizedStreamService {
             participantsCount: data['participantsCount'] as int? ?? 0,
             likesCount: data['likesCount'] as int? ?? 0,
             commentsCount: data['commentsCount'] as int? ?? 0,
+            viewsCount: data['viewsCount'] as int? ?? 0,
+            recentCommentsCount: data['recentCommentsCount'] as int? ?? 0,
+            recentLikesCount: data['recentLikesCount'] as int? ?? 0,
+            recentViewsCount: data['recentViewsCount'] as int? ?? 0,
+            commentCount: data['commentCount'] as int? ?? data['commentsCount'] as int? ?? 0,
           );
         }).toList();
         

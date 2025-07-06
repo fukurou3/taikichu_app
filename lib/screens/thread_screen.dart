@@ -1,12 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../models/countdown.dart';
 import '../models/comment.dart';
-import '../services/comment_service.dart';
-import '../services/optimized_stream_service.dart';
 import '../services/view_tracking_service.dart';
-import '../widgets/comment_card.dart';
+import '../services/participant_service.dart';
 import '../widgets/paginated_comment_list.dart';
 import 'hashtag_search_screen.dart';
 
@@ -20,15 +17,55 @@ class ThreadScreen extends StatefulWidget {
 }
 
 class _ThreadScreenState extends State<ThreadScreen> {
-  final _commentController = TextEditingController();
-  final _scrollController = ScrollController();
-  bool _isCommentEmpty = true;
+  bool _isParticipating = false;
+  bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
-    _commentController.addListener(_onCommentChanged);
     _trackView();
+    _loadParticipationStatus();
+  }
+
+  Future<void> _loadParticipationStatus() async {
+    try {
+      final isParticipating = await ParticipantService.isParticipating(widget.countdown.id);
+      setState(() {
+        _isParticipating = isParticipating;
+      });
+    } catch (e) {
+      print('Error loading participation status: $e');
+    }
+  }
+
+  Future<void> _toggleParticipation() async {
+    if (_isLoading) return;
+    
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final newStatus = await ParticipantService.participateInCountdown(widget.countdown.id);
+      setState(() {
+        _isParticipating = newStatus;
+      });
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(newStatus ? '参加しました！' : '参加を取り消しました'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('エラー: $e')),
+      );
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   Future<void> _trackView() async {
@@ -39,11 +76,6 @@ class _ThreadScreenState extends State<ThreadScreen> {
     }
   }
 
-  void _onCommentChanged() {
-    setState(() {
-      _isCommentEmpty = _commentController.text.trim().isEmpty;
-    });
-  }
 
   Color _getUnifiedColor() {
     return const Color(0xFF1DA1F2); // Twitterブルーで統一
@@ -79,8 +111,11 @@ class _ThreadScreenState extends State<ThreadScreen> {
 
   Widget _buildDescriptionWithHashtags() {
     final description = widget.countdown.description;
+    print('ThreadScreen - Description: "$description"'); // デバッグ用
+    print('ThreadScreen - Description type: ${description.runtimeType}'); // デバッグ用
     
     if (description == null || description.isEmpty) {
+      print('ThreadScreen - Description is null or empty'); // デバッグ用
       return const SizedBox.shrink(); // 説明文がない場合は何も表示しない
     }
     
@@ -254,14 +289,16 @@ class _ThreadScreenState extends State<ThreadScreen> {
           
           const SizedBox(height: 16),
           
-          // 統計情報
+          // Twitter風統計情報（アイコンと数字のみ）
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildStatItem(Icons.people, '${widget.countdown.participantsCount}', '参加者'),
-              const SizedBox(width: 24),
-              _buildStatItem(Icons.favorite, '${widget.countdown.likesCount}', 'いいね'),
-              const SizedBox(width: 24),
-              _buildStatItem(Icons.comment, '${widget.countdown.commentsCount}', 'コメント'),
+              _buildStatIcon(Icons.chat_bubble_outline, '${widget.countdown.commentsCount}'),
+              GestureDetector(
+                onTap: _toggleParticipation,
+                child: _buildParticipantIcon(),
+              ),
+              _buildStatIcon(Icons.favorite_border, '${widget.countdown.likesCount}'),
             ],
           ),
         ],
@@ -269,71 +306,73 @@ class _ThreadScreenState extends State<ThreadScreen> {
     );
   }
 
-  Widget _buildStatItem(IconData icon, String count, String label) {
+  Widget _buildStatIcon(IconData icon, String count) {
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 16, color: Colors.grey[600]),
-        const SizedBox(width: 4),
-        Text(
-          count,
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 14,
+        Icon(icon, size: 18, color: Colors.grey[600]),
+        if (count.isNotEmpty) ...[
+          const SizedBox(width: 4),
+          Text(
+            count,
+            style: TextStyle(
+              color: Colors.grey[600],
+              fontSize: 14,
+            ),
           ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildParticipantIcon() {
+    if (_isLoading) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation<Color>(
+                _isParticipating ? const Color(0xFF1DA1F2) : Colors.grey[600]!,
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            '${widget.countdown.participantsCount}',
+            style: TextStyle(
+              color: _isParticipating ? const Color(0xFF1DA1F2) : Colors.grey[600],
+              fontSize: 14,
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          _isParticipating ? Icons.people : Icons.people_outline,
+          size: 18,
+          color: _isParticipating ? const Color(0xFF1DA1F2) : Colors.grey[600],
         ),
         const SizedBox(width: 4),
         Text(
-          label,
+          '${widget.countdown.participantsCount}',
           style: TextStyle(
-            color: Colors.grey[600],
+            color: _isParticipating ? const Color(0xFF1DA1F2) : Colors.grey[600],
             fontSize: 14,
+            fontWeight: _isParticipating ? FontWeight.bold : FontWeight.normal,
           ),
         ),
       ],
     );
   }
 
-  Future<void> _postComment() async {
-    if (_commentController.text.trim().isEmpty) {
-      return;
-    }
-
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('コメントを投稿するにはログインが必要です。')),
-      );
-      return;
-    }
-
-    try {
-      final comment = Comment(
-        id: '',
-        countdownId: widget.countdown.id,
-        content: _commentController.text.trim(),
-        authorId: user.uid,
-        authorName: '匿名ユーザー',
-        createdAt: DateTime.now(),
-      );
-
-      await CommentService.addComment(comment);
-      _commentController.clear();
-      
-      Future.delayed(const Duration(milliseconds: 100), () {
-        if (_scrollController.hasClients) {
-          _scrollController.animateTo(
-            _scrollController.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOut,
-          );
-        }
-      });
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('コメント投稿に失敗しました: $e')),
-      );
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -368,7 +407,7 @@ class _ThreadScreenState extends State<ThreadScreen> {
           // メインツイート
           _buildMainTweet(),
           
-          // コメント一覧
+          // コメント一覧（コメント投稿欄は削除）
           Expanded(
             child: PaginatedCommentList(
               countdownId: widget.countdown.id,
@@ -380,66 +419,6 @@ class _ThreadScreenState extends State<ThreadScreen> {
               },
             ),
           ),
-          
-          // コメント入力フォーム
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border(
-                top: BorderSide(color: Colors.grey[200]!),
-              ),
-            ),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  radius: 16,
-                  backgroundColor: Colors.grey[300],
-                  child: const Icon(
-                    Icons.person,
-                    color: Colors.white,
-                    size: 18,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextField(
-                    controller: _commentController,
-                    decoration: InputDecoration(
-                      hintText: 'コメントを投稿',
-                      hintStyle: TextStyle(
-                        color: Colors.grey[500],
-                        fontSize: 16,
-                      ),
-                      border: InputBorder.none,
-                    ),
-                    style: const TextStyle(fontSize: 16),
-                    maxLines: null,
-                    onSubmitted: (_) => _postComment(),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                GestureDetector(
-                  onTap: _isCommentEmpty ? null : _postComment,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: _isCommentEmpty ? Colors.grey[300] : _getUnifiedColor(),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: const Text(
-                      '投稿',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
         ],
       ),
     );
@@ -447,8 +426,6 @@ class _ThreadScreenState extends State<ThreadScreen> {
 
   @override
   void dispose() {
-    _commentController.dispose();
-    _scrollController.dispose();
     super.dispose();
   }
 }
