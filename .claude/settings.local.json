@@ -3,7 +3,10 @@
     "allow": [
       "Bash(ping:*)",
       "Bash(flutter pub:*)",
-      "Bash(powershell.exe -Command:*)"
+      "Bash(powershell.exe -Command:*)",
+      "Bash(mkdir:*)",
+      "Bash(flutter run:*)",
+      "Bash(flutter analyze:*)"
     ],
     "deny": []
   }
