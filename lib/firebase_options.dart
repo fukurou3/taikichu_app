@@ -25,10 +25,7 @@ class DefaultFirebaseOptions {
       case TargetPlatform.iOS:
         return ios;
       case TargetPlatform.macOS:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for macos - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return macos;
       case TargetPlatform.windows:
         return windows;
       case TargetPlatform.linux:
@@ -62,6 +59,15 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
+    apiKey: 'AIzaSyB1-8eOBDTvJhSxrPcyklS-bmz06CC9aCk',
+    appId: '1:903887414245:ios:0e6f26439e02478f95450c',
+    messagingSenderId: '903887414245',
+    projectId: 'taikichu-app',
+    storageBucket: 'taikichu-app.firebasestorage.app',
+    iosBundleId: 'com.example.taikichuApp',
+  );
+
+  static const FirebaseOptions macos = FirebaseOptions(
     apiKey: 'AIzaSyB1-8eOBDTvJhSxrPcyklS-bmz06CC9aCk',
     appId: '1:903887414245:ios:0e6f26439e02478f95450c',
     messagingSenderId: '903887414245',
