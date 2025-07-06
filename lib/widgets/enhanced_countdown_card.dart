@@ -243,10 +243,10 @@ class _EnhancedCountdownCardState extends State<EnhancedCountdownCard> {
     }
     
     final hashtags = widget.countdown.hashtags;
-    print('EnhancedCountdownCard - Description: "$description"'); // デバッグ用
-    print('EnhancedCountdownCard - Hashtags: $hashtags'); // デバッグ用
-    print('EnhancedCountdownCard - Description isEmpty: ${description.isEmpty}'); // デバッグ用
-    print('EnhancedCountdownCard - Hashtags count: ${hashtags.length}'); // デバッグ用
+    print('EnhancedCountdownCard - Widget ${widget.countdown.id}: Description: "$description"'); // デバッグ用
+    print('EnhancedCountdownCard - Widget ${widget.countdown.id}: Hashtags: $hashtags'); // デバッグ用
+    print('EnhancedCountdownCard - Widget ${widget.countdown.id}: Description isEmpty: ${description.isEmpty}'); // デバッグ用
+    print('EnhancedCountdownCard - Widget ${widget.countdown.id}: Hashtags count: ${hashtags.length}'); // デバッグ用
     
     // ハッシュタグをハイライト表示するためのSpanを作成
     final spans = <TextSpan>[];

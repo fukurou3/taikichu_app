@@ -111,8 +111,8 @@ class _ThreadScreenState extends State<ThreadScreen> {
 
   Widget _buildDescriptionWithHashtags() {
     final description = widget.countdown.description;
-    print('ThreadScreen - Description: "$description"'); // デバッグ用
-    print('ThreadScreen - Description type: ${description.runtimeType}'); // デバッグ用
+    print('ThreadScreen - Countdown ${widget.countdown.id}: Description: "$description"'); // デバッグ用
+    print('ThreadScreen - Countdown ${widget.countdown.id}: Description type: ${description.runtimeType}'); // デバッグ用
     
     if (description == null || description.isEmpty) {
       print('ThreadScreen - Description is null or empty'); // デバッグ用

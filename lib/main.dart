@@ -4,10 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'screens/home_screen.dart';
+import 'screens/simple_home_screen.dart';
 import 'screens/search_screen.dart';
 import 'screens/notifications_screen.dart';
-import 'screens/profile_screen.dart';
+import 'screens/simple_profile_screen.dart';
 import 'screens/create_countdown_screen.dart';
 import 'screens/countdown_search_screen.dart';
 
@@ -68,10 +68,10 @@ class _MyHomePageState extends State<MyHomePage> {
   int _selectedIndex = 0;
 
   final List<Widget> _screens = [
-    const HomeScreen(),
+    const SimpleHomeScreen(),
     const SearchScreen(),
     const NotificationsScreen(),
-    const ProfileScreen(),
+    const SimpleProfileScreen(),
   ];
 
   void _onItemTapped(int index) {
