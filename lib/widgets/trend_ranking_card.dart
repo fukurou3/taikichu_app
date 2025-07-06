@@ -13,21 +13,8 @@ class TrendRankingCard extends StatelessWidget {
     this.showRank = true,
   });
 
-  Color _getCategoryColor() {
-    switch (ranking.category) {
-      case 'ゲーム':
-        return Colors.blue;
-      case '音楽':
-        return Colors.purple;
-      case 'アニメ':
-        return Colors.orange;
-      case 'ライブ':
-        return Colors.red;
-      case '推し活':
-        return Colors.pink;
-      default:
-        return Colors.grey;
-    }
+  Color _getUnifiedColor() {
+    return const Color(0xFF1DA1F2); // Twitterブルーで統一
   }
 
   Widget _buildRankBadge() {
@@ -87,14 +74,15 @@ class TrendRankingCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          bottom: BorderSide(color: Colors.grey[200]!, width: 0.5),
+        ),
       ),
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
         onTap: () {
           // TrendRankingからCountdownを作成してThreadScreenに渡す
           final countdown = Countdown(
@@ -134,7 +122,7 @@ class TrendRankingCard extends StatelessWidget {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
-                            color: _getCategoryColor(),
+                            color: _getUnifiedColor(),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
@@ -149,8 +137,8 @@ class TrendRankingCard extends StatelessWidget {
                         const SizedBox(width: 8),
                         Text(
                           _formatTimeRemaining(),
-                          style: TextStyle(
-                            color: _getCategoryColor(),
+                          style: const TextStyle(
+                            color: Color(0xFF1DA1F2),
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
                           ),

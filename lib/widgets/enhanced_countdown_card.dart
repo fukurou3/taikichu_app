@@ -94,21 +94,8 @@ class _EnhancedCountdownCardState extends State<EnhancedCountdownCard> {
     }
   }
 
-  Color _getCategoryColor() {
-    switch (widget.countdown.category) {
-      case 'ゲーム':
-        return Colors.blue;
-      case '音楽':
-        return Colors.purple;
-      case 'アニメ':
-        return Colors.orange;
-      case 'ライブ':
-        return Colors.red;
-      case '推し活':
-        return Colors.pink;
-      default:
-        return Colors.grey;
-    }
+  Color _getUnifiedColor() {
+    return const Color(0xFF1DA1F2); // Twitterブルーで統一
   }
 
   Widget _buildTrendingIndicator() {
@@ -144,6 +131,25 @@ class _EnhancedCountdownCardState extends State<EnhancedCountdownCard> {
     return const SizedBox.shrink();
   }
 
+  Widget _buildActionButton(IconData icon, String count, Color color) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 18, color: color),
+        if (count.isNotEmpty) ...[
+          const SizedBox(width: 4),
+          Text(
+            count,
+            style: TextStyle(
+              color: color,
+              fontSize: 14,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
   Widget _buildDescriptionWithHashtags() {
     final description = widget.countdown.description!;
     final hashtags = widget.countdown.hashtags;
@@ -168,8 +174,8 @@ class _EnhancedCountdownCardState extends State<EnhancedCountdownCard> {
       // ハッシュタグ
       spans.add(TextSpan(
         text: match.group(0),
-        style: TextStyle(
-          color: _getCategoryColor(),
+        style: const TextStyle(
+          color: Color(0xFF1DA1F2),
           fontWeight: FontWeight.w500,
         ),
       ));
@@ -194,12 +200,9 @@ class _EnhancedCountdownCardState extends State<EnhancedCountdownCard> {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 8.0),
-      elevation: 4.0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    return Container(
+      color: Colors.white,
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
         onTap: () {
           Navigator.push(
             context,
@@ -208,32 +211,56 @@ class _EnhancedCountdownCardState extends State<EnhancedCountdownCard> {
             ),
           );
         },
-        child: Padding(
+        child: Container(
           padding: const EdgeInsets.all(16.0),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(color: Colors.grey[200]!, width: 0.5),
+            ),
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ヘッダー部分
+              // ヘッダー部分 - Twitter風
               Row(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: _getCategoryColor(),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      widget.countdown.category,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                      ),
+                  CircleAvatar(
+                    radius: 20,
+                    backgroundColor: Colors.grey[200],
+                    child: const Icon(
+                      Icons.event,
+                      color: Colors.grey,
+                      size: 20,
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  _buildTrendingIndicator(),
-                  const Spacer(),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              widget.countdown.category,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            _buildTrendingIndicator(),
+                          ],
+                        ),
+                        Text(
+                          '@countdown',
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 12),
@@ -263,105 +290,63 @@ class _EnhancedCountdownCardState extends State<EnhancedCountdownCard> {
 
               // カウントダウン表示
               Container(
-                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                padding: const EdgeInsets.all(12),
+                margin: const EdgeInsets.symmetric(vertical: 8),
                 decoration: BoxDecoration(
-                  color: _getCategoryColor().withOpacity(0.1),
+                  border: Border.all(color: Colors.grey[300]!),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Text(
-                  _formatTimeRemaining(),
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: _getCategoryColor(),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              // 統計情報とアクション
-              Row(
-                children: [
-                  // 参加者数
-                  Row(
-                    children: [
-                      Icon(Icons.people, size: 16, color: Colors.grey[600]),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${widget.countdown.participantsCount}',
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 14,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(width: 16),
-
-                  // コメント数
-                  Row(
-                    children: [
-                      Icon(Icons.comment_outlined, size: 16, color: Colors.grey[600]),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${widget.countdown.commentsCount}',
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 14,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const Spacer(),
-
-                  // いいねボタン
-                  GestureDetector(
-                    onTap: _toggleLike,
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: _isLiked ? Colors.red[50] : Colors.transparent,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: _isLiked ? Colors.red : Colors.grey[300]!,
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _isLoading
-                              ? SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                      _isLiked ? Colors.red : Colors.grey,
-                                    ),
-                                  ),
-                                )
-                              : AnimatedSwitcher(
-                                  duration: const Duration(milliseconds: 200),
-                                  child: Icon(
-                                    _isLiked ? Icons.favorite : Icons.favorite_border,
-                                    key: ValueKey(_isLiked),
-                                    size: 16,
-                                    color: _isLiked ? Colors.red : Colors.grey[600],
-                                  ),
-                                ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '$_likesCount',
-                            style: TextStyle(
-                              color: _isLiked ? Colors.red : Colors.grey[600],
-                              fontSize: 14,
-                              fontWeight: _isLiked ? FontWeight.bold : FontWeight.normal,
-                            ),
-                          ),
-                        ],
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.schedule,
+                      color: Color(0xFF1DA1F2),
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      _formatTimeRemaining(),
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1DA1F2),
                       ),
                     ),
+                  ],
+                ),
+              ),
+
+              // Twitter風アクションボタン
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  // コメント
+                  _buildActionButton(
+                    Icons.chat_bubble_outline,
+                    '${widget.countdown.commentsCount}',
+                    Colors.grey[600]!,
+                  ),
+                  // 参加者
+                  _buildActionButton(
+                    Icons.people_outline,
+                    '${widget.countdown.participantsCount}',
+                    Colors.grey[600]!,
+                  ),
+                  // いいね
+                  GestureDetector(
+                    onTap: _toggleLike,
+                    child: _buildActionButton(
+                      _isLiked ? Icons.favorite : Icons.favorite_border,
+                      '$_likesCount',
+                      _isLiked ? Colors.red : Colors.grey[600]!,
+                    ),
+                  ),
+                  // シェア
+                  _buildActionButton(
+                    Icons.ios_share,
+                    '',
+                    Colors.grey[600]!,
                   ),
                 ],
               ),

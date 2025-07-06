@@ -45,21 +45,8 @@ class _ThreadScreenState extends State<ThreadScreen> {
     });
   }
 
-  Color _getCategoryColor() {
-    switch (widget.countdown.category) {
-      case 'ゲーム':
-        return Colors.blue;
-      case '音楽':
-        return Colors.purple;
-      case 'アニメ':
-        return Colors.orange;
-      case 'ライブ':
-        return Colors.red;
-      case '推し活':
-        return Colors.pink;
-      default:
-        return Colors.grey;
-    }
+  Color _getUnifiedColor() {
+    return const Color(0xFF1DA1F2); // Twitterブルーで統一
   }
 
   String _formatTimeRemaining() {
@@ -119,7 +106,7 @@ class _ThreadScreenState extends State<ThreadScreen> {
       spans.add(TextSpan(
         text: match.group(0),
         style: const TextStyle(
-          color: Colors.blue,
+          color: Color(0xFF1DA1F2),
           fontSize: 16,
           fontWeight: FontWeight.w500,
         ),
@@ -162,7 +149,7 @@ class _ThreadScreenState extends State<ThreadScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border(
-          bottom: BorderSide(color: Colors.grey[200]!),
+          bottom: BorderSide(color: Colors.grey[200]!, width: 0.5),
         ),
       ),
       child: Column(
@@ -173,10 +160,10 @@ class _ThreadScreenState extends State<ThreadScreen> {
             children: [
               CircleAvatar(
                 radius: 20,
-                backgroundColor: _getCategoryColor().withOpacity(0.2),
-                child: Icon(
+                backgroundColor: Colors.grey[200],
+                child: const Icon(
                   Icons.person,
-                  color: _getCategoryColor(),
+                  color: Colors.grey,
                   size: 24,
                 ),
               ),
@@ -202,20 +189,12 @@ class _ThreadScreenState extends State<ThreadScreen> {
                   ],
                 ),
               ),
-              // カテゴリバッジ
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: _getCategoryColor(),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  widget.countdown.category,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                  ),
+              // カテゴリ表示
+              Text(
+                widget.countdown.category,
+                style: TextStyle(
+                  color: Colors.grey[600],
+                  fontSize: 14,
                 ),
               ),
             ],
@@ -240,26 +219,16 @@ class _ThreadScreenState extends State<ThreadScreen> {
           // カウントダウン表示
           Container(
             padding: const EdgeInsets.all(16),
+            margin: const EdgeInsets.symmetric(vertical: 12),
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  _getCategoryColor().withOpacity(0.1),
-                  _getCategoryColor().withOpacity(0.05),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: _getCategoryColor().withOpacity(0.3),
-                width: 1,
-              ),
+              border: Border.all(color: Colors.grey[300]!),
+              borderRadius: BorderRadius.circular(8),
             ),
             child: Column(
               children: [
                 Icon(
                   Icons.schedule,
-                  color: _getCategoryColor(),
+                  color: _getUnifiedColor(),
                   size: 24,
                 ),
                 const SizedBox(height: 8),
@@ -268,7 +237,7 @@ class _ThreadScreenState extends State<ThreadScreen> {
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
-                    color: _getCategoryColor(),
+                    color: _getUnifiedColor(),
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -455,7 +424,7 @@ class _ThreadScreenState extends State<ThreadScreen> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     decoration: BoxDecoration(
-                      color: _isCommentEmpty ? Colors.grey[300] : _getCategoryColor(),
+                      color: _isCommentEmpty ? Colors.grey[300] : _getUnifiedColor(),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: const Text(

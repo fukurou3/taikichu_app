@@ -83,33 +83,15 @@ class _CountdownCardState extends State<CountdownCard> {
     }
   }
 
-  Color _getCategoryColor() {
-    switch (widget.countdown.category) {
-      case 'ゲーム':
-        return Colors.blue;
-      case '音楽':
-        return Colors.purple;
-      case 'アニメ':
-        return Colors.orange;
-      case 'ライブ':
-        return Colors.red;
-      case '推し活':
-        return Colors.pink;
-      default:
-        return Colors.grey;
-    }
+  Color _getUnifiedColor() {
+    return const Color(0xFF1DA1F2); // Twitterブルーで統一
   }
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      elevation: 4,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
+    return Container(
+      color: Colors.white,
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
         onTap: () {
           Navigator.push(
             context,
@@ -118,8 +100,13 @@ class _CountdownCardState extends State<CountdownCard> {
             ),
           );
         },
-        child: Padding(
+        child: Container(
           padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(color: Colors.grey[200]!, width: 0.5),
+            ),
+          ),
           child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -128,7 +115,7 @@ class _CountdownCardState extends State<CountdownCard> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: _getCategoryColor(),
+                    color: _getUnifiedColor(),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(

@@ -62,21 +62,8 @@ class _CreateCountdownScreenState extends State<CreateCountdownScreen> {
     super.dispose();
   }
 
-  Color _getCategoryColor() {
-    switch (_selectedCategory) {
-      case 'ゲーム':
-        return Colors.blue;
-      case '音楽':
-        return Colors.purple;
-      case 'アニメ':
-        return Colors.orange;
-      case 'ライブ':
-        return Colors.red;
-      case '推し活':
-        return Colors.pink;
-      default:
-        return Colors.grey;
-    }
+  Color _getUnifiedColor() {
+    return const Color(0xFF1DA1F2); // Twitterブルーで統一
   }
 
   bool get _canCreate {
@@ -109,10 +96,10 @@ class _CreateCountdownScreenState extends State<CreateCountdownScreen> {
         children: [
           Text(
             'ハッシュタグ',
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.bold,
-              color: Colors.blue[700],
+              color: Color(0xFF1DA1F2),
             ),
           ),
           const SizedBox(height: 4),
@@ -123,14 +110,14 @@ class _CreateCountdownScreenState extends State<CreateCountdownScreen> {
               return Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.blue[100],
+                  color: const Color(0xFF1DA1F2).withOpacity(0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
                   '#$tag',
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 12,
-                    color: Colors.blue[800],
+                    color: Color(0xFF1DA1F2),
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -151,7 +138,7 @@ class _CreateCountdownScreenState extends State<CreateCountdownScreen> {
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
-            colorScheme: ColorScheme.fromSeed(seedColor: _getCategoryColor()),
+            colorScheme: ColorScheme.fromSeed(seedColor: _getUnifiedColor()),
           ),
           child: child!,
         );
@@ -165,7 +152,7 @@ class _CreateCountdownScreenState extends State<CreateCountdownScreen> {
         builder: (context, child) {
           return Theme(
             data: Theme.of(context).copyWith(
-              colorScheme: ColorScheme.fromSeed(seedColor: _getCategoryColor()),
+              colorScheme: ColorScheme.fromSeed(seedColor: _getUnifiedColor()),
             ),
             child: child!,
           );
@@ -265,7 +252,7 @@ class _CreateCountdownScreenState extends State<CreateCountdownScreen> {
             child: ElevatedButton(
               onPressed: _canCreate ? _createCountdown : null,
               style: ElevatedButton.styleFrom(
-                backgroundColor: _canCreate ? _getCategoryColor() : Colors.grey[300],
+                backgroundColor: _canCreate ? _getUnifiedColor() : Colors.grey[300],
                 foregroundColor: Colors.white,
                 elevation: 0,
                 shape: RoundedRectangleBorder(
@@ -305,10 +292,10 @@ class _CreateCountdownScreenState extends State<CreateCountdownScreen> {
                         // プロフィールアイコン
                         CircleAvatar(
                           radius: 20,
-                          backgroundColor: _getCategoryColor().withOpacity(0.2),
-                          child: Icon(
+                          backgroundColor: Colors.grey[200],
+                          child: const Icon(
                             Icons.person,
-                            color: _getCategoryColor(),
+                            color: Colors.grey,
                             size: 24,
                           ),
                         ),
@@ -371,9 +358,9 @@ class _CreateCountdownScreenState extends State<CreateCountdownScreen> {
                               const SnackBar(content: Text('画像機能は今後実装予定です')),
                             );
                           },
-                          icon: Icon(
+                          icon: const Icon(
                             Icons.image_outlined,
-                            color: _getCategoryColor(),
+                            color: Color(0xFF1DA1F2),
                             size: 24,
                           ),
                         ),
@@ -385,12 +372,12 @@ class _CreateCountdownScreenState extends State<CreateCountdownScreen> {
                             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                             decoration: BoxDecoration(
                               color: _selectedDate != null 
-                                  ? _getCategoryColor().withOpacity(0.1)
+                                  ? const Color(0xFF1DA1F2).withOpacity(0.1)
                                   : Colors.grey[100],
                               borderRadius: BorderRadius.circular(16),
                               border: Border.all(
                                 color: _selectedDate != null 
-                                    ? _getCategoryColor()
+                                    ? const Color(0xFF1DA1F2)
                                     : Colors.grey[300]!,
                               ),
                             ),
@@ -401,7 +388,7 @@ class _CreateCountdownScreenState extends State<CreateCountdownScreen> {
                                   Icons.schedule,
                                   size: 16,
                                   color: _selectedDate != null 
-                                      ? _getCategoryColor()
+                                      ? const Color(0xFF1DA1F2)
                                       : Colors.grey[600],
                                 ),
                                 const SizedBox(width: 4),
@@ -412,7 +399,7 @@ class _CreateCountdownScreenState extends State<CreateCountdownScreen> {
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: _selectedDate != null 
-                                        ? _getCategoryColor()
+                                        ? const Color(0xFF1DA1F2)
                                         : Colors.grey[600],
                                     fontWeight: _selectedDate != null 
                                         ? FontWeight.bold 
