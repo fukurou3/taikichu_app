@@ -22,6 +22,8 @@ class CommentService {
   }
 
   static Future<void> addComment(Comment comment) async {
+    // Cloud Functionsがトリガーされてカウントを更新するため、
+    // クライアント側での明示的なカウント更新は不要
     await _firestore.collection(_collection).add(comment.toFirestore());
   }
 

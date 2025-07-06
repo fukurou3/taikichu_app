@@ -3,7 +3,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/countdown.dart';
 import '../models/comment.dart';
 import '../services/comment_service.dart';
+import '../services/optimized_stream_service.dart';
 import '../widgets/comment_card.dart';
+import '../widgets/paginated_comment_list.dart';
 
 class ThreadScreen extends StatefulWidget {
   final Countdown countdown;
@@ -230,48 +232,12 @@ class _ThreadScreenState extends State<ThreadScreen> {
             ),
           ),
           
-          // コメント一覧
+          // 最適化されたコメント一覧
           Expanded(
-            child: StreamBuilder<List<Comment>>(
-              stream: CommentService.getCommentsStream(widget.countdown.id),
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return Center(
-                    child: Text('エラーが発生しました: ${snapshot.error}'),
-                  );
-                }
-
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                    child: CircularProgressIndicator(),
-                  );
-                }
-
-                final comments = snapshot.data ?? [];
-
-                if (comments.isEmpty) {
-                  return const Center(
-                    child: Text(
-                      'まだコメントがありません。\n最初のコメントを投稿しましょう！',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 16, color: Colors.grey),
-                    ),
-                  );
-                }
-
-                return ListView.builder(
-                  controller: _scrollController,
-                  itemCount: comments.length,
-                  itemBuilder: (context, index) {
-                    final comment = comments[index];
-                    return CommentCard(
-                      comment: comment,
-                      onLike: () => _handleLike(comment),
-                      onReply: () => _handleReply(comment),
-                    );
-                  },
-                );
-              },
+            child: PaginatedCommentList(
+              countdownId: widget.countdown.id,
+              onLike: _handleLike,
+              onReply: _handleReply,
             ),
           ),
           

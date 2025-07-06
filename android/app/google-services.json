@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "903887414245",
-    "project_id": "taikichu-app",
-    "storage_bucket": "taikichu-app.firebasestorage.app"
+    "project_number": "694414843228",
+    "project_id": "taikichu-app-c8dcd",
+    "storage_bucket": "taikichu-app-c8dcd.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:903887414245:android:8c35f045dc0be89e95450c",
+        "mobilesdk_app_id": "1:694414843228:android:49642db38b3f4a7bcdf599",
         "android_client_info": {
           "package_name": "com.example.taikichu_app"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyDEnIlcyDaCqRaDpQ5ISywb6aeu3x6yDRs"
+          "current_key": "AIzaSyAtde-oMJc8lV_w-UMfQ9qj_Kx6x0yMIaQ"
         }
       ],
       "services": {

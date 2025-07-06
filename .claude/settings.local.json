@@ -6,7 +6,8 @@
       "Bash(powershell.exe -Command:*)",
       "Bash(mkdir:*)",
       "Bash(flutter run:*)",
-      "Bash(flutter analyze:*)"
+      "Bash(flutter analyze:*)",
+      "Bash(firebase init:*)"
     ],
     "deny": []
   }

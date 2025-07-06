@@ -2,15 +2,67 @@ import 'package:flutter/material.dart';
 import '../models/countdown.dart';
 import '../screens/thread_screen.dart';
 import '../services/comment_service.dart';
+import '../services/countdown_like_service.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
-class CountdownCard extends StatelessWidget {
+class CountdownCard extends StatefulWidget {
   final Countdown countdown;
 
   const CountdownCard({super.key, required this.countdown});
 
+  @override
+  State<CountdownCard> createState() => _CountdownCardState();
+}
+
+class _CountdownCardState extends State<CountdownCard> {
+  bool _isLiked = false;
+  int _likesCount = 0;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLikeStatus();
+  }
+
+  Future<void> _loadLikeStatus() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      final isLiked = await CountdownLikeService.isLiked(widget.countdown.id, user.uid);
+      setState(() {
+        _isLiked = isLiked;
+        _likesCount = widget.countdown.likesCount;
+      });
+    }
+  }
+
+  Future<void> _toggleLike() async {
+    if (_isLoading) return;
+    
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final newLikeStatus = await CountdownLikeService.toggleLike(widget.countdown.id);
+      setState(() {
+        _isLiked = newLikeStatus;
+        _likesCount = newLikeStatus ? _likesCount + 1 : _likesCount - 1;
+      });
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('エラーが発生しました: $e')),
+      );
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
   String _formatTimeRemaining() {
     final now = DateTime.now();
-    final difference = countdown.eventDate.difference(now);
+    final difference = widget.countdown.eventDate.difference(now);
     
     if (difference.isNegative) {
       return "イベント終了";
@@ -32,7 +84,7 @@ class CountdownCard extends StatelessWidget {
   }
 
   Color _getCategoryColor() {
-    switch (countdown.category) {
+    switch (widget.countdown.category) {
       case 'ゲーム':
         return Colors.blue;
       case '音楽':
@@ -62,7 +114,7 @@ class CountdownCard extends StatelessWidget {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => ThreadScreen(countdown: countdown),
+              builder: (context) => ThreadScreen(countdown: widget.countdown),
             ),
           );
         },
@@ -80,7 +132,7 @@ class CountdownCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    countdown.category,
+                    widget.countdown.category,
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 12,
@@ -94,7 +146,7 @@ class CountdownCard extends StatelessWidget {
                     const Icon(Icons.people, size: 16, color: Colors.grey),
                     const SizedBox(width: 4),
                     Text(
-                      '${countdown.participantsCount}',
+                      '${widget.countdown.participantsCount}',
                       style: const TextStyle(
                         color: Colors.grey,
                         fontSize: 14,
@@ -103,17 +155,33 @@ class CountdownCard extends StatelessWidget {
                     const SizedBox(width: 16),
                     const Icon(Icons.chat_bubble_outline, size: 16, color: Colors.grey),
                     const SizedBox(width: 4),
-                    FutureBuilder<int>(
-                      future: CommentService.getCommentCount(countdown.id),
-                      builder: (context, snapshot) {
-                        return Text(
-                          '${snapshot.data ?? 0}',
-                          style: const TextStyle(
-                            color: Colors.grey,
-                            fontSize: 14,
+                    Text(
+                      '${widget.countdown.commentsCount}',
+                      style: const TextStyle(
+                        color: Colors.grey,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    GestureDetector(
+                      onTap: _toggleLike,
+                      child: Row(
+                        children: [
+                          Icon(
+                            _isLiked ? Icons.favorite : Icons.favorite_border,
+                            size: 16,
+                            color: _isLiked ? Colors.red : Colors.grey,
                           ),
-                        );
-                      },
+                          const SizedBox(width: 4),
+                          Text(
+                            '$_likesCount',
+                            style: TextStyle(
+                              color: _isLiked ? Colors.red : Colors.grey,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -121,7 +189,7 @@ class CountdownCard extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              countdown.eventName,
+              widget.countdown.eventName,
               style: const TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
@@ -129,7 +197,7 @@ class CountdownCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              '${countdown.eventDate.year}年${countdown.eventDate.month}月${countdown.eventDate.day}日',
+              '${widget.countdown.eventDate.year}年${widget.countdown.eventDate.month}月${widget.countdown.eventDate.day}日',
               style: const TextStyle(
                 fontSize: 14,
                 color: Colors.grey,

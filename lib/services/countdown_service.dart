@@ -28,6 +28,20 @@ class CountdownService {
         .update({'participantsCount': newCount});
   }
 
+  static Future<void> updateLikesCount(String countdownId, int increment) async {
+    await _firestore
+        .collection(_collection)
+        .doc(countdownId)
+        .update({'likesCount': FieldValue.increment(increment)});
+  }
+
+  static Future<void> updateCommentsCount(String countdownId, int increment) async {
+    await _firestore
+        .collection(_collection)
+        .doc(countdownId)
+        .update({'commentsCount': FieldValue.increment(increment)});
+  }
+
   static Future<void> deleteCountdown(String countdownId) async {
     await _firestore.collection(_collection).doc(countdownId).delete();
   }

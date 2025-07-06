@@ -12,7 +12,52 @@ class TrendRankingService {
     int limit = 10,
   }) async {
     try {
-      // 全てのカウントダウンを取得
+      // 事前計算されたランキングデータを取得
+      Query<Map<String, dynamic>> query = _firestore.collection('trendRankings');
+      
+      // カテゴリフィルター
+      if (type != RankingType.overall) {
+        query = query.where('category', isEqualTo: type.categoryFilter);
+      }
+      
+      query = query.orderBy('rank').limit(limit);
+      
+      final snapshot = await query.get();
+      
+      if (snapshot.docs.isEmpty) {
+        // ランキングデータが存在しない場合、リアルタイムで計算
+        return await _calculateRankingsRealtime(type: type, limit: limit);
+      }
+      
+      final rankings = snapshot.docs.map((doc) {
+        final data = doc.data();
+        return TrendRanking(
+          countdownId: data['countdownId'] as String,
+          eventName: data['eventName'] as String,
+          category: data['category'] as String,
+          eventDate: (data['eventDate'] as Timestamp).toDate(),
+          participantsCount: data['participantsCount'] as int,
+          commentsCount: data['commentsCount'] as int,
+          sharesCount: data['sharesCount'] as int,
+          trendScore: (data['trendScore'] as num).toDouble(),
+          rank: data['rank'] as int,
+        );
+      }).toList();
+
+      return rankings;
+    } catch (e) {
+      print('Error fetching trend rankings: $e');
+      // エラーの場合はリアルタイム計算にフォールバック
+      return await _calculateRankingsRealtime(type: type, limit: limit);
+    }
+  }
+
+  static Future<List<TrendRanking>> _calculateRankingsRealtime({
+    RankingType type = RankingType.overall,
+    int limit = 10,
+  }) async {
+    try {
+      // 全てのカウントダウンを取得（正しいコレクション名を使用）
       Query<Map<String, dynamic>> query = _firestore.collection('counts');
       
       // カテゴリフィルター
@@ -67,8 +112,48 @@ class TrendRankingService {
 
       return rankings.take(limit).toList();
     } catch (e) {
-      print('Error fetching trend rankings: $e');
+      print('Error calculating realtime rankings: $e');
       return [];
+    }
+  }
+
+  // ランキングデータを事前計算してFirestoreに保存
+  static Future<void> updateRankings() async {
+    try {
+      // 全カテゴリのランキングを計算
+      for (final type in RankingType.values) {
+        final rankings = await _calculateRankingsRealtime(type: type, limit: 50);
+        
+        // 既存のランキングデータを削除
+        final existingQuery = _firestore
+            .collection('trendRankings')
+            .where('category', isEqualTo: type == RankingType.overall ? 'overall' : type.categoryFilter);
+        
+        final existingDocs = await existingQuery.get();
+        for (final doc in existingDocs.docs) {
+          await doc.reference.delete();
+        }
+        
+        // 新しいランキングデータを保存
+        for (final ranking in rankings) {
+          await _firestore.collection('trendRankings').add({
+            'countdownId': ranking.countdownId,
+            'eventName': ranking.eventName,
+            'category': type == RankingType.overall ? 'overall' : ranking.category,
+            'eventDate': Timestamp.fromDate(ranking.eventDate),
+            'participantsCount': ranking.participantsCount,
+            'commentsCount': ranking.commentsCount,
+            'sharesCount': ranking.sharesCount,
+            'trendScore': ranking.trendScore,
+            'rank': ranking.rank,
+            'updatedAt': Timestamp.now(),
+          });
+        }
+      }
+      
+      print('Trend rankings updated successfully');
+    } catch (e) {
+      print('Error updating trend rankings: $e');
     }
   }
 

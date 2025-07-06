@@ -41,48 +41,49 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyCqkvqUcRPkTL5ehgXqkWtRdomSY_jBrDc',
-    appId: '1:903887414245:web:a511fdf8b090ab4d95450c',
-    messagingSenderId: '903887414245',
-    projectId: 'taikichu-app',
-    authDomain: 'taikichu-app.firebaseapp.com',
-    storageBucket: 'taikichu-app.firebasestorage.app',
-    measurementId: 'G-HYVH44DFLK',
+    apiKey: 'AIzaSyBcWrxWyjcPQB5T6cLNyOZJvd1QKHkZM3w',
+    appId: '1:694414843228:web:0ab9fb3f44b98a06cdf599',
+    messagingSenderId: '694414843228',
+    projectId: 'taikichu-app-c8dcd',
+    authDomain: 'taikichu-app-c8dcd.firebaseapp.com',
+    storageBucket: 'taikichu-app-c8dcd.firebasestorage.app',
+    measurementId: 'G-1SH3KCDK45',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyDEnIlcyDaCqRaDpQ5ISywb6aeu3x6yDRs',
-    appId: '1:903887414245:android:8c35f045dc0be89e95450c',
-    messagingSenderId: '903887414245',
-    projectId: 'taikichu-app',
-    storageBucket: 'taikichu-app.firebasestorage.app',
+    apiKey: 'AIzaSyAtde-oMJc8lV_w-UMfQ9qj_Kx6x0yMIaQ',
+    appId: '1:694414843228:android:49642db38b3f4a7bcdf599',
+    messagingSenderId: '694414843228',
+    projectId: 'taikichu-app-c8dcd',
+    storageBucket: 'taikichu-app-c8dcd.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyB1-8eOBDTvJhSxrPcyklS-bmz06CC9aCk',
-    appId: '1:903887414245:ios:0e6f26439e02478f95450c',
-    messagingSenderId: '903887414245',
-    projectId: 'taikichu-app',
-    storageBucket: 'taikichu-app.firebasestorage.app',
+    apiKey: 'AIzaSyA7mBjWfucD5YINtuXQ4QOazfNOwhuz8gs',
+    appId: '1:694414843228:ios:a4bae6772b4f934ccdf599',
+    messagingSenderId: '694414843228',
+    projectId: 'taikichu-app-c8dcd',
+    storageBucket: 'taikichu-app-c8dcd.firebasestorage.app',
     iosBundleId: 'com.example.taikichuApp',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'AIzaSyB1-8eOBDTvJhSxrPcyklS-bmz06CC9aCk',
-    appId: '1:903887414245:ios:0e6f26439e02478f95450c',
-    messagingSenderId: '903887414245',
-    projectId: 'taikichu-app',
-    storageBucket: 'taikichu-app.firebasestorage.app',
+    apiKey: 'AIzaSyA7mBjWfucD5YINtuXQ4QOazfNOwhuz8gs',
+    appId: '1:694414843228:ios:a4bae6772b4f934ccdf599',
+    messagingSenderId: '694414843228',
+    projectId: 'taikichu-app-c8dcd',
+    storageBucket: 'taikichu-app-c8dcd.firebasestorage.app',
     iosBundleId: 'com.example.taikichuApp',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'AIzaSyCqkvqUcRPkTL5ehgXqkWtRdomSY_jBrDc',
-    appId: '1:903887414245:web:9085abe6e47e995f95450c',
-    messagingSenderId: '903887414245',
-    projectId: 'taikichu-app',
-    authDomain: 'taikichu-app.firebaseapp.com',
-    storageBucket: 'taikichu-app.firebasestorage.app',
-    measurementId: 'G-D81L9D2R70',
+    apiKey: 'AIzaSyBcWrxWyjcPQB5T6cLNyOZJvd1QKHkZM3w',
+    appId: '1:694414843228:web:34212bc8608f0338cdf599',
+    messagingSenderId: '694414843228',
+    projectId: 'taikichu-app-c8dcd',
+    authDomain: 'taikichu-app-c8dcd.firebaseapp.com',
+    storageBucket: 'taikichu-app-c8dcd.firebasestorage.app',
+    measurementId: 'G-BW59JP3M6E',
   );
+
 }
