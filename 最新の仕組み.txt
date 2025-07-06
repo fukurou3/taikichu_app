@@ -1,0 +1,231 @@
+『待機中。』- トレンド連動型カウントダウンSNSアプリ 最新仕組み
+================================================================
+
+## 基本概念
+- 「待ち時間を会話時間に」をコンセプトとした、カウントダウン型SNSアプリ
+- ゲーム、音楽、アニメ、ライブ、推し活などのイベントを対象
+- Twitter風のUI/UXでコミュニケーションを促進
+
+## 技術構成
+### フロントエンド
+- Flutter SDK (Dart)
+- Firebase SDK (Auth, Firestore, Cloud Functions)
+- 匿名認証によるユーザー管理
+
+### バックエンド
+- Firebase Firestore (NoSQL データベース)
+- Firebase Cloud Functions (サーバーサイド処理)
+- Firebase Authentication (匿名認証)
+- Cloud Scheduler (定期バッチ処理)
+
+### プロジェクト設定
+- プロジェクトID: taikichu-app-c8dcd
+- Firebase プロジェクト: 新規作成 (旧データなし)
+
+## データ構造
+### コレクション構成
+```
+counts (カウントダウン)
+├── comments (コメント)
+├── countdownLikes (いいね)
+├── views (閲覧記録)
+├── recentViews (24時間以内の閲覧)
+└── trendRankings (トレンドランキング)
+```
+
+### カウントダウンデータ
+```
+- id: ドキュメントID
+- eventName: イベント名
+- description: 説明文（ハッシュタグを含む）
+- eventDate: イベント日時
+- category: カテゴリ（ゲーム、音楽、アニメ、ライブ、推し活、その他）
+- imageUrl: 画像URL（オプション）
+- creatorId: 作成者ID
+- participantsCount: 参加者数
+- likesCount: いいね数
+- commentsCount: コメント数
+- viewsCount: 閲覧数
+- recentCommentsCount: 24時間以内のコメント数
+- recentLikesCount: 24時間以内のいいね数
+- recentViewsCount: 24時間以内の閲覧数
+- commentCount: 互換性フィールド
+```
+
+## 主要機能
+
+### 1. 重複防止システム（検索優先作成フロー）
+- カウントダウン作成時に検索画面を先に表示
+- 類似イベントの自動検出（70%以上の類似度で重複判定）
+- 完全一致検索、部分一致検索、同日開催検索
+- 日本語キーワード抽出と類似度計算
+- 類似カウントダウンが見つかった場合の警告表示
+
+### 2. 閲覧追跡システム
+- 30秒間のクールダウン機能
+- 二重コレクション方式：
+  - views: 永続的な閲覧記録
+  - recentViews: 24時間限定の閲覧記録
+- ローカルキャッシュによる重複防止
+- 自動クリーンアップ機能
+- カウントダウンカード表示時と詳細画面開閉時の両方で閲覧数カウント
+- 閲覧数は画面上非表示、トレンドランキング計算で内部使用
+
+### 3. トレンドランキング
+- 5分間隔での自動更新
+- カテゴリ別・全体別ランキング
+- 24時間以内のアクティビティ重視
+- スコア計算式（影響力順）：
+  ```
+  トレンドスコア = (参加者数 × 5.0) + (最近の閲覧数 × 3.0) + (最近のコメント数 × 2.0) + (最近のいいね数 × 1.5)
+  ```
+- 閲覧数は参加者数の次に影響力のある指標として計算に使用
+
+### 4. 高機能カウントダウンカード
+- HOT表示（高活動カウントダウン）
+- いいね機能（アニメーション付き）
+- 統計情報表示（参加者数、いいね数、コメント数）
+- 自動閲覧追跡（詳細画面開閉時も追跡）
+- 閲覧数は非表示（内部でトレンド計算に使用）
+- カテゴリ別色分け
+
+### 5. ハッシュタグ機能
+- Twitter風のハッシュタグ自動検出（#で開始）
+- 説明文に含まれるハッシュタグをリアルタイム抽出
+- カウントダウンカードでハッシュタグをカテゴリ色でハイライト表示
+- 作成画面でハッシュタグをプレビュー表示
+- 正規表現によるハッシュタグ解析: `#[^\s#]+`
+
+### 6. Twitter風カウントダウン作成画面
+- プロフィールアイコン + テキスト入力エリア
+- イベント名と説明文の2段階入力
+- ハッシュタグのリアルタイムプレビュー
+- 画像追加ボタン（プレースホルダー）
+- 日時選択ボタン（日付+時刻選択）
+- カテゴリ選択ドロップダウン
+- 右上の「作成」ボタン
+
+### 7. 最適化されたデータ読み込み
+- StreamBuilder最適化（3秒間隔バッチ処理）
+- ページネーション対応
+- デバウンス機能
+- キャッシュ機能
+
+## Cloud Functions構成
+### トリガー関数
+```javascript
+// コメント投稿時
+exports.onCommentCreate = functions.firestore
+  .document('counts/{countdownId}/comments/{commentId}')
+  .onCreate(updateCounters);
+
+// いいね時
+exports.onLikeCreate = functions.firestore
+  .document('countdownLikes/{likeId}')
+  .onCreate(updateCounters);
+
+// 閲覧時
+exports.onViewCreate = functions.firestore
+  .document('views/{viewId}')
+  .onCreate(updateCounters);
+
+// 最近の閲覧時
+exports.onRecentViewCreate = functions.firestore
+  .document('recentViews/{viewId}')
+  .onCreate(updateCounters);
+```
+
+### 定期実行関数
+```javascript
+// 5分間隔でトレンドランキング更新
+exports.updateTrendRankings = functions.pubsub
+  .schedule('*/5 * * * *')
+  .onRun(updateTrendRankings);
+```
+
+## 検索システム
+### 検索アルゴリズム
+1. **完全一致検索**: イベント名の完全一致
+2. **部分一致検索**: キーワードベースの類似度計算（30%以上）
+3. **同日開催検索**: 同じ日付のイベント検索
+4. **関連度ソート**: 完全一致 > 部分一致 > 同日開催
+
+### キーワード抽出
+- 日本語対応の簡易抽出
+- 括弧類・記号の除去
+- 2文字以上の単語を抽出
+- 大文字小文字の正規化
+
+### 類似度計算
+- キーワード間の完全一致・部分一致を評価
+- マッチ数 / 総キーワード数 で類似度を算出
+
+## UI/UX設計
+### 画面構成
+- メイン画面：トレンドランキング + 全カウントダウン一覧
+- 検索画面：検索優先の作成フロー
+- 作成画面：事前入力データ対応
+- スレッド画面：コメント・いいね機能
+
+### CustomScrollView構成
+```dart
+CustomScrollView(
+  slivers: [
+    SliverToBoxAdapter(トレンドランキング),
+    SliverList(全カウントダウン一覧),
+  ],
+)
+```
+
+## パフォーマンス最適化
+### Enterprise級スケーラビリティ
+- サーバーサイドカウンター更新
+- 分散カウンターパターン対応
+- クライアントサイドクエリ最小化
+- バッチ処理による負荷分散
+
+### Firestore最適化
+- 複合インデックス設定
+- クエリ最適化
+- ページネーション実装
+- リアルタイム更新の最適化
+
+## セキュリティ
+### Firestore Rules
+```javascript
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 認証済みユーザーのみアクセス可能
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
+```
+
+## 開発・デプロイ構成
+### 開発環境
+- Flutter SDK
+- Firebase CLI
+- Node.js (Cloud Functions)
+- WSL2 (Linux環境)
+
+### デプロイ手順
+1. `firebase deploy --only functions` (Cloud Functions)
+2. `firebase deploy --only firestore` (Firestore Rules & Indexes)
+3. `flutter build apk` (APK生成)
+
+## 今後の拡張性
+- プッシュ通知機能
+- ユーザープロフィール機能
+- 画像アップロード機能
+- より高度な検索機能
+- ソーシャル機能の強化
+- 管理者機能
+
+## 注意事項
+- 現在は匿名認証のみ対応
+- 画像機能は未実装
+- プッシュ通知は未実装
+- 本番環境では適切な認証方法への移行が必要

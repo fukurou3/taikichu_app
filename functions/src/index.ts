@@ -223,9 +223,9 @@ async function updateRankingForCategory(category: string) {
     const rankings = countdowns.map((countdown) => {
       const trendScore = calculateTrendScore(
         countdown.participantsCount || 0,
-        countdown.commentsCount || 0,
-        countdown.likesCount || 0,
-        0, // sharesCount - 今後実装
+        countdown.recentCommentsCount || 0,  // 24時間以内のコメント数を使用
+        countdown.recentLikesCount || 0,     // 24時間以内のいいね数を使用
+        countdown.recentViewsCount || 0,     // 24時間以内の閲覧数を追加
         countdown.eventDate
       );
 
@@ -237,7 +237,10 @@ async function updateRankingForCategory(category: string) {
         participantsCount: countdown.participantsCount || 0,
         commentsCount: countdown.commentsCount || 0,
         likesCount: countdown.likesCount || 0,
-        sharesCount: 0,
+        viewsCount: countdown.viewsCount || 0,
+        recentCommentsCount: countdown.recentCommentsCount || 0,
+        recentLikesCount: countdown.recentLikesCount || 0,
+        recentViewsCount: countdown.recentViewsCount || 0,
         trendScore,
       };
     });
@@ -278,19 +281,21 @@ async function updateRankingForCategory(category: string) {
 
 /**
  * トレンドスコア計算関数
+ * 影響力の順: 参加者数 > 閲覧数 > コメント数 > いいね数
  */
 function calculateTrendScore(
   participantsCount: number,
-  commentsCount: number,
-  likesCount: number,
-  sharesCount: number,
+  recentCommentsCount: number,
+  recentLikesCount: number,
+  recentViewsCount: number,
   eventDate: Date
 ): number {
-  // 基本スコア: 参加者数 × 1.0 + コメント数 × 2.0 + いいね数 × 1.5 + シェア数 × 3.0
-  const baseScore = participantsCount * 1.0 + 
-                   commentsCount * 2.0 + 
-                   likesCount * 1.5 + 
-                   sharesCount * 3.0;
+  // 基本スコア: 参加者数 × 5.0 + 閲覧数 × 3.0 + コメント数 × 2.0 + いいね数 × 1.5
+  // 最近のアクティビティ（24時間以内）を重視
+  const baseScore = participantsCount * 5.0 + 
+                   recentViewsCount * 3.0 + 
+                   recentCommentsCount * 2.0 + 
+                   recentLikesCount * 1.5;
 
   // 時間による重み付け
   const now = new Date();

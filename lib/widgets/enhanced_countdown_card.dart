@@ -144,6 +144,54 @@ class _EnhancedCountdownCardState extends State<EnhancedCountdownCard> {
     return const SizedBox.shrink();
   }
 
+  Widget _buildDescriptionWithHashtags() {
+    final description = widget.countdown.description!;
+    final hashtags = widget.countdown.hashtags;
+    
+    // ハッシュタグをハイライト表示するためのSpanを作成
+    final spans = <TextSpan>[];
+    
+    // ハッシュタグの位置を検索
+    int lastIndex = 0;
+    final regex = RegExp(r'#[^\s#]+');
+    final matches = regex.allMatches(description);
+    
+    for (final match in matches) {
+      // ハッシュタグ前のテキスト
+      if (match.start > lastIndex) {
+        spans.add(TextSpan(
+          text: description.substring(lastIndex, match.start),
+          style: const TextStyle(color: Colors.black87),
+        ));
+      }
+      
+      // ハッシュタグ
+      spans.add(TextSpan(
+        text: match.group(0),
+        style: TextStyle(
+          color: _getCategoryColor(),
+          fontWeight: FontWeight.w500,
+        ),
+      ));
+      
+      lastIndex = match.end;
+    }
+    
+    // 残りのテキスト
+    if (lastIndex < description.length) {
+      spans.add(TextSpan(
+        text: description.substring(lastIndex),
+        style: const TextStyle(color: Colors.black87),
+      ));
+    }
+    
+    return RichText(
+      text: TextSpan(children: spans),
+      maxLines: 3,
+      overflow: TextOverflow.ellipsis,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -186,20 +234,6 @@ class _EnhancedCountdownCardState extends State<EnhancedCountdownCard> {
                   const SizedBox(width: 8),
                   _buildTrendingIndicator(),
                   const Spacer(),
-                  // 閲覧数表示
-                  Row(
-                    children: [
-                      Icon(Icons.visibility, size: 16, color: Colors.grey[600]),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${widget.countdown.viewsCount}',
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
                 ],
               ),
               const SizedBox(height: 12),
@@ -213,6 +247,12 @@ class _EnhancedCountdownCardState extends State<EnhancedCountdownCard> {
                 ),
               ),
               const SizedBox(height: 8),
+
+              // 説明文とハッシュタグ
+              if (widget.countdown.description != null) ...[
+                _buildDescriptionWithHashtags(),
+                const SizedBox(height: 8),
+              ],
 
               // イベント日時
               Text(

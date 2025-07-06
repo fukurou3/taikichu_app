@@ -43,6 +43,7 @@ class CountdownSearchService {
     return Countdown(
       id: doc.id,
       eventName: data['eventName'] as String,
+      description: data['description'] as String?,
       eventDate: (data['eventDate'] as Timestamp).toDate(),
       category: data['category'] as String,
       imageUrl: data['imageUrl'] as String?,

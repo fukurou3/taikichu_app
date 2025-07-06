@@ -12,7 +12,8 @@
       "Bash(echo $SHELL)",
       "Bash(/snap/bin/flutter:*)",
       "Bash(dart:*)",
-      "Bash(flutter build:*)"
+      "Bash(flutter build:*)",
+      "Bash(firebase deploy:*)"
     ],
     "deny": []
   }

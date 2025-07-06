@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class Countdown {
   final String id;
   final String eventName;
+  final String? description;     // 説明文（ハッシュタグを含む）
   final DateTime eventDate;
   final String category;
   final String? imageUrl;
@@ -19,6 +20,7 @@ class Countdown {
   Countdown({
     required this.id,
     required this.eventName,
+    this.description,
     required this.eventDate,
     required this.category,
     this.imageUrl,
@@ -41,6 +43,7 @@ class Countdown {
     return Countdown(
       id: snapshot.id,
       eventName: data?['eventName'] as String,
+      description: data?['description'] as String?,
       eventDate: (data?['eventDate'] as Timestamp).toDate(),
       category: data?['category'] as String,
       imageUrl: data?['imageUrl'] as String?,
@@ -59,6 +62,7 @@ class Countdown {
   Map<String, dynamic> toFirestore() {
     return {
       "eventName": eventName,
+      if (description != null) "description": description,
       "eventDate": Timestamp.fromDate(eventDate),
       "category": category,
       if (imageUrl != null) "imageUrl": imageUrl,
@@ -71,5 +75,14 @@ class Countdown {
       "recentLikesCount": recentLikesCount,
       "recentViewsCount": recentViewsCount,
     };
+  }
+
+  /// 説明文からハッシュタグを抽出
+  List<String> get hashtags {
+    if (description == null) return [];
+    
+    final regex = RegExp(r'#[^\s#]+');
+    final matches = regex.allMatches(description!);
+    return matches.map((match) => match.group(0)!.substring(1)).toList();
   }
 }

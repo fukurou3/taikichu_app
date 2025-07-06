@@ -201,4 +201,108 @@ class TrendRankingService {
     return Stream.periodic(const Duration(minutes: 5), (count) => count)
         .asyncMap((_) => getTrendRankings(type: type, limit: limit));
   }
+
+  /// カテゴリ別のカウントダウンをトレンド順で取得
+  static Future<List<Countdown>> getCountdownsByCategory({
+    required String category,
+    int limit = 20,
+  }) async {
+    try {
+      // まずトレンドランキングから取得を試みる
+      Query<Map<String, dynamic>> rankingQuery = _firestore.collection('trendRankings');
+      
+      if (category != 'overall') {
+        rankingQuery = rankingQuery.where('category', isEqualTo: category);
+      }
+      
+      rankingQuery = rankingQuery.orderBy('rank').limit(limit);
+      
+      final rankingSnapshot = await rankingQuery.get();
+      
+      if (rankingSnapshot.docs.isNotEmpty) {
+        // トレンドランキングからカウントダウンIDを取得
+        final countdownIds = rankingSnapshot.docs
+            .map((doc) => doc.data()['countdownId'] as String)
+            .toList();
+        
+        // 各カウントダウンの詳細データを取得
+        final List<Countdown> countdowns = [];
+        for (final id in countdownIds) {
+          try {
+            final countdownDoc = await _firestore.collection('counts').doc(id).get();
+            if (countdownDoc.exists) {
+              countdowns.add(Countdown.fromFirestore(countdownDoc, null));
+            }
+          } catch (e) {
+            print('Error fetching countdown $id: $e');
+          }
+        }
+        
+        return countdowns;
+      } else {
+        // トレンドランキングがない場合、直接カウントダウンを取得してソート
+        return await _getCountdownsByCategoryDirect(category: category, limit: limit);
+      }
+    } catch (e) {
+      print('Error getting countdowns by category: $e');
+      return await _getCountdownsByCategoryDirect(category: category, limit: limit);
+    }
+  }
+
+  /// カテゴリ別のカウントダウンを直接取得（フォールバック用）
+  static Future<List<Countdown>> _getCountdownsByCategoryDirect({
+    required String category,
+    int limit = 20,
+  }) async {
+    try {
+      Query<Map<String, dynamic>> query = _firestore.collection('counts');
+      
+      if (category != 'overall') {
+        query = query.where('category', isEqualTo: category);
+      }
+      
+      // 最近の活動順でソート（recentCommentsCount + recentLikesCount + recentViewsCountの合計）
+      query = query.orderBy('eventDate', descending: false).limit(limit * 2); // 多めに取得してソート
+      
+      final snapshot = await query.get();
+      final countdowns = snapshot.docs.map((doc) {
+        final data = doc.data();
+        return Countdown(
+          id: doc.id,
+          eventName: data['eventName'] as String,
+          description: data['description'] as String?,
+          eventDate: (data['eventDate'] as Timestamp).toDate(),
+          category: data['category'] as String,
+          imageUrl: data['imageUrl'] as String?,
+          creatorId: data['creatorId'] as String,
+          participantsCount: data['participantsCount'] as int? ?? 0,
+          likesCount: data['likesCount'] as int? ?? 0,
+          commentsCount: data['commentsCount'] as int? ?? 0,
+          viewsCount: data['viewsCount'] as int? ?? 0,
+          recentCommentsCount: data['recentCommentsCount'] as int? ?? 0,
+          recentLikesCount: data['recentLikesCount'] as int? ?? 0,
+          recentViewsCount: data['recentViewsCount'] as int? ?? 0,
+          commentCount: data['commentCount'] as int? ?? data['commentsCount'] as int? ?? 0,
+        );
+      }).toList();
+
+      // トレンドスコア順でソート
+      countdowns.sort((a, b) {
+        final aScore = (a.participantsCount * 5.0) + 
+                      (a.recentViewsCount * 3.0) + 
+                      (a.recentCommentsCount * 2.0) + 
+                      (a.recentLikesCount * 1.5);
+        final bScore = (b.participantsCount * 5.0) + 
+                      (b.recentViewsCount * 3.0) + 
+                      (b.recentCommentsCount * 2.0) + 
+                      (b.recentLikesCount * 1.5);
+        return bScore.compareTo(aScore);
+      });
+
+      return countdowns.take(limit).toList();
+    } catch (e) {
+      print('Error getting countdowns directly: $e');
+      return [];
+    }
+  }
 }

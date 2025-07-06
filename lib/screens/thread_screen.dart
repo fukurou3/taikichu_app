@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/countdown.dart';
 import '../models/comment.dart';
 import '../services/comment_service.dart';
 import '../services/optimized_stream_service.dart';
+import '../services/view_tracking_service.dart';
 import '../widgets/comment_card.dart';
 import '../widgets/paginated_comment_list.dart';
+import 'hashtag_search_screen.dart';
 
 class ThreadScreen extends StatefulWidget {
   final Countdown countdown;
@@ -25,6 +28,15 @@ class _ThreadScreenState extends State<ThreadScreen> {
   void initState() {
     super.initState();
     _commentController.addListener(_onCommentChanged);
+    _trackView();
+  }
+
+  Future<void> _trackView() async {
+    try {
+      await ViewTrackingService.trackView(widget.countdown.id);
+    } catch (e) {
+      print('Error tracking view: $e');
+    }
   }
 
   void _onCommentChanged() {
@@ -73,19 +85,243 @@ class _ThreadScreenState extends State<ThreadScreen> {
     }
   }
 
-  String _formatCommentTime(DateTime createdAt) {
-    final now = DateTime.now();
-    final difference = now.difference(createdAt);
+  String _formatEventDate() {
+    final date = widget.countdown.eventDate;
+    return '${date.year}年${date.month}月${date.day}日 ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+  }
+
+  Widget _buildDescriptionWithHashtags() {
+    final description = widget.countdown.description;
     
-    if (difference.inDays > 0) {
-      return "${difference.inDays}日前";
-    } else if (difference.inHours > 0) {
-      return "${difference.inHours}時間前";
-    } else if (difference.inMinutes > 0) {
-      return "${difference.inMinutes}分前";
-    } else {
-      return "たった今";
+    if (description == null || description.isEmpty) {
+      return const SizedBox.shrink(); // 説明文がない場合は何も表示しない
     }
+    
+    final spans = <TextSpan>[];
+    int lastIndex = 0;
+    final regex = RegExp(r'#[^\s#]+');
+    final matches = regex.allMatches(description);
+    
+    for (final match in matches) {
+      // ハッシュタグ前のテキスト
+      if (match.start > lastIndex) {
+        spans.add(TextSpan(
+          text: description.substring(lastIndex, match.start),
+          style: const TextStyle(
+            color: Colors.black87,
+            fontSize: 16,
+          ),
+        ));
+      }
+      
+      // ハッシュタグ（タップ可能）
+      final hashtag = match.group(0)!.substring(1); // # を除去
+      spans.add(TextSpan(
+        text: match.group(0),
+        style: const TextStyle(
+          color: Colors.blue,
+          fontSize: 16,
+          fontWeight: FontWeight.w500,
+        ),
+        recognizer: TapGestureRecognizer()
+          ..onTap = () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => HashtagSearchScreen(hashtag: hashtag),
+              ),
+            );
+          },
+      ));
+      
+      lastIndex = match.end;
+    }
+    
+    // 残りのテキスト
+    if (lastIndex < description.length) {
+      spans.add(TextSpan(
+        text: description.substring(lastIndex),
+        style: const TextStyle(
+          color: Colors.black87,
+          fontSize: 16,
+        ),
+      ));
+    }
+    
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: RichText(
+        text: TextSpan(children: spans),
+      ),
+    );
+  }
+
+  Widget _buildMainTweet() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          bottom: BorderSide(color: Colors.grey[200]!),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ユーザー情報
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 20,
+                backgroundColor: _getCategoryColor().withOpacity(0.2),
+                child: Icon(
+                  Icons.person,
+                  color: _getCategoryColor(),
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '匿名ユーザー',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                    Text(
+                      '@anonymous',
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // カテゴリバッジ
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _getCategoryColor(),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  widget.countdown.category,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          
+          // イベント名
+          Text(
+            widget.countdown.eventName,
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              height: 1.3,
+            ),
+          ),
+          
+          // 説明文とハッシュタグ
+          _buildDescriptionWithHashtags(),
+          
+          const SizedBox(height: 16),
+          
+          // カウントダウン表示
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  _getCategoryColor().withOpacity(0.1),
+                  _getCategoryColor().withOpacity(0.05),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: _getCategoryColor().withOpacity(0.3),
+                width: 1,
+              ),
+            ),
+            child: Column(
+              children: [
+                Icon(
+                  Icons.schedule,
+                  color: _getCategoryColor(),
+                  size: 24,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _formatTimeRemaining(),
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: _getCategoryColor(),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _formatEventDate(),
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          
+          const SizedBox(height: 16),
+          
+          // 統計情報
+          Row(
+            children: [
+              _buildStatItem(Icons.people, '${widget.countdown.participantsCount}', '参加者'),
+              const SizedBox(width: 24),
+              _buildStatItem(Icons.favorite, '${widget.countdown.likesCount}', 'いいね'),
+              const SizedBox(width: 24),
+              _buildStatItem(Icons.comment, '${widget.countdown.commentsCount}', 'コメント'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatItem(IconData icon, String count, String label) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: Colors.grey[600]),
+        const SizedBox(width: 4),
+        Text(
+          count,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
+          ),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.grey[600],
+            fontSize: 14,
+          ),
+        ),
+      ],
+    );
   }
 
   Future<void> _postComment() async {
@@ -114,7 +350,6 @@ class _ThreadScreenState extends State<ThreadScreen> {
       await CommentService.addComment(comment);
       _commentController.clear();
       
-      // 新しいコメントが見えるように下にスクロール
       Future.delayed(const Duration(milliseconds: 100), () {
         if (_scrollController.hasClients) {
           _scrollController.animateTo(
@@ -131,178 +366,102 @@ class _ThreadScreenState extends State<ThreadScreen> {
     }
   }
 
-  void _handleLike(Comment comment) {
-    // いいね機能のプレースホルダー
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('いいね機能は今後実装予定です')),
-    );
-  }
-
-  void _handleReply(Comment comment) {
-    // 返信機能のプレースホルダー
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('返信機能は今後実装予定です')),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text(widget.countdown.eventName),
-        backgroundColor: _getCategoryColor(),
-        foregroundColor: Colors.white,
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text(
+          'カウントダウン',
+          style: TextStyle(
+            color: Colors.black,
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.more_vert, color: Colors.grey[600]),
+            onPressed: () {
+              // メニューオプション
+            },
+          ),
+        ],
       ),
       body: Column(
         children: [
-          // カウントダウン情報
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            color: Colors.grey[50],
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: _getCategoryColor(),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        widget.countdown.category,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    const Spacer(),
-                    Row(
-                      children: [
-                        const Icon(Icons.people, size: 16, color: Colors.grey),
-                        const SizedBox(width: 4),
-                        Text(
-                          '${widget.countdown.participantsCount}',
-                          style: const TextStyle(
-                            color: Colors.grey,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  widget.countdown.eventName,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${widget.countdown.eventDate.year}年${widget.countdown.eventDate.month}月${widget.countdown.eventDate.day}日',
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: _getCategoryColor().withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    _formatTimeRemaining(),
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: _getCategoryColor(),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          // メインツイート
+          _buildMainTweet(),
           
-          // 最適化されたコメント一覧
+          // コメント一覧
           Expanded(
             child: PaginatedCommentList(
               countdownId: widget.countdown.id,
-              onLike: _handleLike,
-              onReply: _handleReply,
+              onLike: (comment) {
+                // いいね機能のプレースホルダー
+              },
+              onReply: (comment) {
+                // 返信機能のプレースホルダー
+              },
             ),
           ),
           
           // コメント入力フォーム
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               color: Colors.white,
               border: Border(
-                top: BorderSide(color: Colors.grey, width: 0.2),
+                top: BorderSide(color: Colors.grey[200]!),
               ),
             ),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                // アバター
                 CircleAvatar(
                   radius: 16,
                   backgroundColor: Colors.grey[300],
-                  child: const Text(
-                    'あ',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black54,
-                      fontSize: 12,
-                    ),
+                  child: const Icon(
+                    Icons.person,
+                    color: Colors.white,
+                    size: 18,
                   ),
                 ),
                 const SizedBox(width: 12),
-                
-                // 入力フィールド
                 Expanded(
                   child: TextField(
                     controller: _commentController,
-                    decoration: const InputDecoration(
-                      hintText: 'ツイートを入力',
-                      border: InputBorder.none,
+                    decoration: InputDecoration(
+                      hintText: 'コメントを投稿',
                       hintStyle: TextStyle(
-                        color: Colors.grey,
-                        fontSize: 18,
+                        color: Colors.grey[500],
+                        fontSize: 16,
                       ),
+                      border: InputBorder.none,
                     ),
-                    style: const TextStyle(fontSize: 18),
+                    style: const TextStyle(fontSize: 16),
                     maxLines: null,
                     onSubmitted: (_) => _postComment(),
                   ),
                 ),
-                
-                // 投稿ボタン
-                Container(
-                  margin: const EdgeInsets.only(left: 8),
-                  child: ElevatedButton(
-                    onPressed: _isCommentEmpty ? null : _postComment,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _getCategoryColor(),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      elevation: 0,
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: _isCommentEmpty ? null : _postComment,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: _isCommentEmpty ? Colors.grey[300] : _getCategoryColor(),
+                      borderRadius: BorderRadius.circular(20),
                     ),
                     child: const Text(
-                      'ツイート',
+                      '投稿',
                       style: TextStyle(
+                        color: Colors.white,
                         fontWeight: FontWeight.bold,
                         fontSize: 14,
                       ),
@@ -324,3 +483,4 @@ class _ThreadScreenState extends State<ThreadScreen> {
     super.dispose();
   }
 }
+
