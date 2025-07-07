@@ -15,7 +15,8 @@
       "Bash(flutter build:*)",
       "Bash(firebase deploy:*)",
       "Bash(flutter:*)",
-      "Bash(/mnt/c/Users/fukur/flutter/bin/flutter analyze)"
+      "Bash(/mnt/c/Users/fukur/flutter/bin/flutter analyze)",
+      "Bash(gcloud scheduler jobs list:*)"
     ],
     "deny": []
   }
