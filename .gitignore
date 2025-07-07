@@ -54,6 +54,9 @@ firebase-debug.log
 **/google-services.json
 **/GoogleService-Info.plist
 
+# Google Cloud Service Account Key
+admin_scripts/service-account-key.json
+
 # 🐳 Docker & ローカル開発環境
 .docker-volumes/
 docker-compose.override.yml
