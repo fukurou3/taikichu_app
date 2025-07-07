@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/optimized_stream_service.dart';
-import '../services/participant_service.dart';
+import '../services/scalable_participant_service.dart';
 import '../widgets/enhanced_countdown_card.dart';
 import '../models/countdown.dart';
 
@@ -24,7 +24,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _loadParticipatedIds() async {
     try {
-      final ids = await ParticipantService.getUserParticipatedCountdowns()
+      // 🚀 統一パイプライン対応: スケーラブル参加サービス使用
+      final ids = await ScalableParticipantService.getUserParticipatedCountdowns()
           .timeout(const Duration(seconds: 5));
       
       if (mounted) {

@@ -21,25 +21,25 @@ class CountdownService {
     await _firestore.collection(_collection).add(countdown.toFirestore());
   }
 
+  /// 【非推奨】直接参加者数更新
+  /// ⚠️ 統一パイプライン移行後は使用禁止
+  @Deprecated('Use UnifiedAnalyticsService.sendParticipationEvent() instead')
   static Future<void> updateParticipantsCount(String countdownId, int newCount) async {
-    await _firestore
-        .collection(_collection)
-        .doc(countdownId)
-        .update({'participantsCount': newCount});
+    throw UnimplementedError('Direct counts update disabled for security - use unified pipeline');
   }
 
+  /// 【非推奨】直接いいね数更新
+  /// ⚠️ 統一パイプライン移行後は使用禁止
+  @Deprecated('Use UnifiedAnalyticsService.sendLikeEvent() instead')
   static Future<void> updateLikesCount(String countdownId, int increment) async {
-    await _firestore
-        .collection(_collection)
-        .doc(countdownId)
-        .update({'likesCount': FieldValue.increment(increment)});
+    throw UnimplementedError('Direct counts update disabled for security - use unified pipeline');
   }
 
+  /// 【非推奨】直接コメント数更新
+  /// ⚠️ 統一パイプライン移行後は使用禁止
+  @Deprecated('Use UnifiedAnalyticsService.sendCommentEvent() instead')
   static Future<void> updateCommentsCount(String countdownId, int increment) async {
-    await _firestore
-        .collection(_collection)
-        .doc(countdownId)
-        .update({'commentsCount': FieldValue.increment(increment)});
+    throw UnimplementedError('Direct counts update disabled for security - use unified pipeline');
   }
 
   static Future<void> deleteCountdown(String countdownId) async {

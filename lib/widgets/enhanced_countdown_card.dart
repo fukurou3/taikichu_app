@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import '../models/countdown.dart';
 import '../screens/thread_screen.dart';
-import '../services/countdown_like_service.dart';
-import '../services/view_tracking_service.dart';
-import '../services/participant_service.dart';
+import '../services/scalable_like_service.dart';
+import '../services/unified_analytics_service.dart';
+import '../services/scalable_participant_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class EnhancedCountdownCard extends StatefulWidget {
@@ -32,7 +32,8 @@ class _EnhancedCountdownCardState extends State<EnhancedCountdownCard> {
 
   Future<void> _loadParticipationStatus() async {
     try {
-      final isParticipating = await ParticipantService.isParticipating(widget.countdown.id);
+      // 🚀 統一パイプライン対応: スケーラブル参加サービス使用
+      final isParticipating = await ScalableParticipantService.isParticipating(widget.countdown.id);
       setState(() {
         _isParticipating = isParticipating;
       });
@@ -49,7 +50,8 @@ class _EnhancedCountdownCardState extends State<EnhancedCountdownCard> {
     });
 
     try {
-      final newStatus = await ParticipantService.participateInCountdown(widget.countdown.id);
+      // 🚀 統一パイプライン対応: スケーラブル参加サービス使用
+      final newStatus = await ScalableParticipantService.toggleParticipation(widget.countdown.id);
       setState(() {
         _isParticipating = newStatus;
       });
@@ -67,17 +69,19 @@ class _EnhancedCountdownCardState extends State<EnhancedCountdownCard> {
   Future<void> _loadLikeStatus() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
-      final isLiked = await CountdownLikeService.isLiked(widget.countdown.id, user.uid);
+      // 🚀 統一パイプライン対応: スケーラブルいいねサービス使用
+      final isLiked = await ScalableLikeService.isLiked(widget.countdown.id, user.uid);
+      final likesCount = await ScalableLikeService.getLikesCount(widget.countdown.id);
       setState(() {
         _isLiked = isLiked;
-        _likesCount = widget.countdown.likesCount;
+        _likesCount = likesCount;
       });
     }
   }
 
   Future<void> _trackView() async {
-    // 閲覧をトラッキング
-    await ViewTrackingService.trackView(widget.countdown.id);
+    // 🚀 統一パイプライン: 閲覧イベント送信
+    await UnifiedAnalyticsService.sendViewEvent(widget.countdown.id);
   }
 
   Future<void> _toggleLike() async {
@@ -88,10 +92,15 @@ class _EnhancedCountdownCardState extends State<EnhancedCountdownCard> {
     });
 
     try {
-      final newLikeStatus = await CountdownLikeService.toggleLike(widget.countdown.id);
+      // 🚀 統一パイプライン対応: スケーラブルいいねサービス使用
+      final newLikeStatus = await ScalableLikeService.toggleLike(widget.countdown.id);
+      
+      // 最新のいいね数を取得（Redis高速アクセス）
+      final latestCount = await ScalableLikeService.getLikesCount(widget.countdown.id);
+      
       setState(() {
         _isLiked = newLikeStatus;
-        _likesCount = newLikeStatus ? _likesCount + 1 : _likesCount - 1;
+        _likesCount = latestCount;
       });
       
       // ハプティックフィードバック

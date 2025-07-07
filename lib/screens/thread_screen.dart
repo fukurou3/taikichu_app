@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import '../models/countdown.dart';
 import '../models/comment.dart';
-import '../services/view_tracking_service.dart';
-import '../services/participant_service.dart';
+import '../services/unified_analytics_service.dart';
+import '../services/scalable_participant_service.dart';
 import '../widgets/paginated_comment_list.dart';
 import 'hashtag_search_screen.dart';
 
@@ -29,7 +29,8 @@ class _ThreadScreenState extends State<ThreadScreen> {
 
   Future<void> _loadParticipationStatus() async {
     try {
-      final isParticipating = await ParticipantService.isParticipating(widget.countdown.id);
+      // 🚀 統一パイプライン対応: スケーラブル参加サービス使用
+      final isParticipating = await ScalableParticipantService.isParticipating(widget.countdown.id);
       setState(() {
         _isParticipating = isParticipating;
       });
@@ -46,7 +47,8 @@ class _ThreadScreenState extends State<ThreadScreen> {
     });
 
     try {
-      final newStatus = await ParticipantService.participateInCountdown(widget.countdown.id);
+      // 🚀 統一パイプライン対応: スケーラブル参加サービス使用
+      final newStatus = await ScalableParticipantService.toggleParticipation(widget.countdown.id);
       setState(() {
         _isParticipating = newStatus;
       });
@@ -70,7 +72,8 @@ class _ThreadScreenState extends State<ThreadScreen> {
 
   Future<void> _trackView() async {
     try {
-      await ViewTrackingService.trackView(widget.countdown.id);
+      // 🚀 統一パイプライン: 閲覧イベント送信
+      await UnifiedAnalyticsService.sendViewEvent(widget.countdown.id);
     } catch (e) {
       print('Error tracking view: $e');
     }

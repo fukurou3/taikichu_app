@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/simple_stream_service.dart';
-import '../services/participant_service.dart';
+import '../services/scalable_participant_service.dart';
 import '../widgets/enhanced_countdown_card.dart';
 import '../models/countdown.dart';
 
@@ -29,7 +29,8 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen> {
 
     try {
       print('SimpleHomeScreen - Loading participated IDs...');
-      final ids = await ParticipantService.getUserParticipatedCountdowns()
+      // 🚀 統一パイプライン対応: スケーラブル参加サービス使用
+      final ids = await ScalableParticipantService.getUserParticipatedCountdowns()
           .timeout(const Duration(seconds: 10));
       
       print('SimpleHomeScreen - Got participated IDs: $ids');

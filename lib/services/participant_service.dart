@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'unified_analytics_service.dart';
 
 class ParticipantService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -20,10 +21,8 @@ class ParticipantService {
         // 参加を取り消す
         await participantRef.delete();
         
-        // カウントダウンの参加者数を減らす
-        await _firestore.collection('counts').doc(countdownId).update({
-          'participantsCount': FieldValue.increment(-1),
-        });
+        // 🚀 統一パイプライン: 参加解除イベント送信
+        await UnifiedAnalyticsService.sendParticipationEvent(countdownId, false);
         
         return false; // 参加解除
       } else {
@@ -34,10 +33,8 @@ class ParticipantService {
           'participatedAt': FieldValue.serverTimestamp(),
         });
         
-        // カウントダウンの参加者数を増やす
-        await _firestore.collection('counts').doc(countdownId).update({
-          'participantsCount': FieldValue.increment(1),
-        });
+        // 🚀 統一パイプライン: 参加追加イベント送信
+        await UnifiedAnalyticsService.sendParticipationEvent(countdownId, true);
         
         return true; // 参加
       }

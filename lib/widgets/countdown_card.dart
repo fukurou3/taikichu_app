@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/countdown.dart';
 import '../screens/thread_screen.dart';
 import '../services/comment_service.dart';
-import '../services/countdown_like_service.dart';
+import '../services/scalable_like_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class CountdownCard extends StatefulWidget {
@@ -28,10 +28,12 @@ class _CountdownCardState extends State<CountdownCard> {
   Future<void> _loadLikeStatus() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
-      final isLiked = await CountdownLikeService.isLiked(widget.countdown.id, user.uid);
+      // 🚀 統一パイプライン対応: スケーラブルいいねサービス使用
+      final isLiked = await ScalableLikeService.isLiked(widget.countdown.id, user.uid);
+      final likesCount = await ScalableLikeService.getLikesCount(widget.countdown.id);
       setState(() {
         _isLiked = isLiked;
-        _likesCount = widget.countdown.likesCount;
+        _likesCount = likesCount;
       });
     }
   }
@@ -44,10 +46,15 @@ class _CountdownCardState extends State<CountdownCard> {
     });
 
     try {
-      final newLikeStatus = await CountdownLikeService.toggleLike(widget.countdown.id);
+      // 🚀 統一パイプライン対応: スケーラブルいいねサービス使用
+      final newLikeStatus = await ScalableLikeService.toggleLike(widget.countdown.id);
+      
+      // 最新のいいね数を取得（Redis高速アクセス）
+      final latestCount = await ScalableLikeService.getLikesCount(widget.countdown.id);
+      
       setState(() {
         _isLiked = newLikeStatus;
-        _likesCount = newLikeStatus ? _likesCount + 1 : _likesCount - 1;
+        _likesCount = latestCount;
       });
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(

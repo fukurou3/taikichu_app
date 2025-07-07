@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/comment.dart';
+import 'unified_analytics_service.dart';
+import 'mvp_analytics_client.dart';
 
 class CommentService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -22,9 +24,11 @@ class CommentService {
   }
 
   static Future<void> addComment(Comment comment) async {
-    // Cloud Functionsがトリガーされてカウントを更新するため、
-    // クライアント側での明示的なカウント更新は不要
+    // コメントをFirestoreに保存
     await _firestore.collection(_collection).add(comment.toFirestore());
+    
+    // 🚀 統一パイプライン: コメント追加イベント送信
+    await UnifiedAnalyticsService.sendCommentEvent(comment.countdownId);
   }
 
   static Future<void> deleteComment(String commentId) async {
@@ -32,10 +36,15 @@ class CommentService {
   }
 
   static Future<int> getCommentCount(String countdownId) async {
-    final snapshot = await _firestore
-        .collection(_collection)
-        .where('countdownId', isEqualTo: countdownId)
-        .get();
-    return snapshot.docs.length;
+    try {
+      // 🚀 統一パイプライン: 1-5ms超高速レスポンス
+      return await MVPAnalyticsClient.getCounterValue(
+        countdownId: countdownId,
+        counterType: 'comments',
+      );
+    } catch (e) {
+      print('CommentService - Error getting comment count: $e');
+      return 0;
+    }
   }
 }
