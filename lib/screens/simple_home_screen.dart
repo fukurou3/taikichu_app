@@ -86,9 +86,36 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen> {
       ),
       body: Column(
         children: [
-          // 現在の表示モード
+          // 検索枠
           Container(
             padding: const EdgeInsets.all(16),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(25),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.search, color: Colors.grey[600]),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'カウントダウンを検索',
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          
+          // 現在の表示モード
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               children: [
                 Text(
@@ -105,6 +132,7 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen> {
               ],
             ),
           ),
+          const SizedBox(height: 16),
           
           // カウントダウンリスト
           Expanded(
