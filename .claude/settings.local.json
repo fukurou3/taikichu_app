@@ -21,7 +21,15 @@
       "Bash(mv:*)",
       "Bash(firebase login:*)",
       "Bash(firebase firestore:rules:*)",
-      "Bash(firebase projects:list:*)"
+      "Bash(firebase projects:list:*)",
+      "Bash(python:*)",
+      "Bash(pip3 install:*)",
+      "Bash(chmod:*)",
+      "Bash(docker-compose up:*)",
+      "Bash(powershell.exe:*)",
+      "Bash(docker-compose:*)",
+      "Bash(curl:*)",
+      "Bash(docker exec:*)"
     ],
     "deny": []
   }

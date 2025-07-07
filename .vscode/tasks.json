@@ -1,0 +1,232 @@
+{
+  "// 🚀 Taikichu App - VS Code タスク設定": "",
+  "// ====================================": "",
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "// 🐳 Docker 環境管理": "",
+      "label": "🐳 Docker: 全サービス起動",
+      "type": "shell",
+      "command": "docker-compose",
+      "args": ["up", "-d"],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "🐳 Docker: 全サービス停止",
+      "type": "shell",
+      "command": "docker-compose",
+      "args": ["down"],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "🐳 Docker: サービス再起動",
+      "type": "shell",
+      "command": "docker-compose",
+      "args": ["restart"],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "🐳 Docker: ログ表示",
+      "type": "shell",
+      "command": "docker-compose",
+      "args": ["logs", "-f"],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": true,
+        "panel": "new"
+      },
+      "problemMatcher": [],
+      "isBackground": true
+    },
+    {
+      "// 📱 Flutter 開発": "",
+      "label": "📱 Flutter: アプリ起動",
+      "type": "shell",
+      "command": "flutter",
+      "args": ["run", "--dart-define=ENVIRONMENT=development"],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": true,
+        "panel": "new"
+      },
+      "problemMatcher": ["$dart-flutter"],
+      "isBackground": true
+    },
+    {
+      "label": "📱 Flutter: テスト実行",
+      "type": "shell",
+      "command": "flutter",
+      "args": ["test"],
+      "group": "test",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "problemMatcher": ["$dart-flutter-test"]
+    },
+    {
+      "label": "📱 Flutter: ビルド (Android Debug)",
+      "type": "shell",
+      "command": "flutter",
+      "args": ["build", "apk", "--debug"],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "problemMatcher": ["$dart-flutter"]
+    },
+    {
+      "label": "📱 Flutter: 依存関係更新",
+      "type": "shell",
+      "command": "flutter",
+      "args": ["pub", "get"],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "silent",
+        "focus": false,
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "// 🩺 ヘルスチェック・デバッグ": "",
+      "label": "🩺 ヘルスチェック実行",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/health-check.sh",
+      "args": ["-v"],
+      "group": "test",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "🔍 Redis CLI接続",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/debug-tools.sh",
+      "args": ["redis-cli"],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": true,
+        "panel": "new"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "📊 Analytics Service テスト",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/debug-tools.sh",
+      "args": ["analytics-test"],
+      "group": "test",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "// 🗃️ データ移行": "",
+      "label": "🗃️ データ移行: ドライラン",
+      "type": "shell",
+      "command": "python",
+      "args": ["firestore_to_redis_migration.py", "--dry-run"],
+      "options": {
+        "cwd": "${workspaceFolder}/migration_scripts"
+      },
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "🗃️ データ移行: 実行",
+      "type": "shell",
+      "command": "python",
+      "args": ["firestore_to_redis_migration.py", "--migrate"],
+      "options": {
+        "cwd": "${workspaceFolder}/migration_scripts"
+      },
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": true,
+        "panel": "new"
+      },
+      "problemMatcher": []
+    },
+    {
+      "// 🧹 メンテナンス": "",
+      "label": "🧹 環境クリーンアップ",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/debug-tools.sh",
+      "args": ["cleanup"],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "🔧 Flutter修復",
+      "type": "shell",
+      "command": "flutter",
+      "args": ["doctor"],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    }
+  ]
+}

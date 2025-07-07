@@ -13,20 +13,40 @@
 
 ## 🚀 クイックスタート
 
-### 1. サービスアカウントキー取得
+### 1. 初回セットアップ
+```bash
+# 🎯 ワンコマンドセットアップ（推奨）
+make setup                    # Unix/Linux/Mac
+.\dev-tools.ps1 setup        # Windows PowerShell
+
+# または手動セットアップ
+cp .env.example .env.development
+# .env.development を編集
+```
+
+### 2. サービスアカウントキー取得
 ```bash
 # Firebase Console → プロジェクト設定 → サービスアカウント
 # 「新しい秘密鍵を生成」してダウンロード
 # → service-account.json としてプロジェクトルートに配置
 ```
 
-### 2. Docker環境起動
+### 3. 統一開発環境起動
 ```bash
-# プロジェクトルートで実行
-docker-compose up -d
+# 🎯 ワンコマンド起動（推奨）
+make start                    # Unix/Linux/Mac
+.\dev-tools.ps1 start        # Windows PowerShell
 
-# ログ確認
-docker-compose logs -f
+# または従来方法
+docker-compose up -d
+```
+
+### 4. ヘルスチェック
+```bash
+# 🩺 統合ヘルスチェック
+make health                   # Unix/Linux/Mac
+.\dev-tools.ps1 health       # Windows PowerShell
+./scripts/health-check.sh     # 詳細版
 ```
 
 ### 3. 統一パイプライン確認

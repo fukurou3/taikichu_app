@@ -1,0 +1,68 @@
+{
+  "// 🚀 Taikichu App - 推奨 VS Code 拡張機能": "",
+  "// ============================================": "",
+  
+  "recommendations": [
+    "// 📱 Flutter/Dart 開発": "",
+    "dart-code.dart-code",
+    "dart-code.flutter",
+    
+    "// 🔥 Firebase": "",
+    "toba.vsfire",
+    
+    "// 🐳 Docker & コンテナ": "",
+    "ms-vscode-remote.remote-containers",
+    "ms-azuretools.vscode-docker",
+    
+    "// 🐍 Python": "",
+    "ms-python.python",
+    "ms-python.black-formatter",
+    "ms-python.flake8",
+    
+    "// 🌐 Web開発": "",
+    "esbenp.prettier-vscode",
+    "bradlc.vscode-tailwindcss",
+    
+    "// 📝 マークアップ & 設定ファイル": "",
+    "redhat.vscode-yaml",
+    "ms-vscode.vscode-json",
+    "yzhang.markdown-all-in-one",
+    
+    "// 🔧 ユーティリティ": "",
+    "pkief.material-icon-theme",
+    "gruntfuggly.todo-tree",
+    "streetsidesoftware.code-spell-checker",
+    "oderwat.indent-rainbow",
+    "formulahendry.auto-rename-tag",
+    
+    "// 🧪 テスト & 品質": "",
+    "hbenl.vscode-test-explorer",
+    "ryanluker.vscode-coverage-gutters",
+    
+    "// 📊 Git & バージョン管理": "",
+    "eamodio.gitlens",
+    "mhutchie.git-graph",
+    
+    "// 🔍 検索 & ナビゲーション": "",
+    "ms-vscode.vscode-typescript-next",
+    "bradlc.vscode-emmet",
+    
+    "// 📈 パフォーマンス & 監視": "",
+    "ms-vscode.vscode-edge-devtools",
+    
+    "// 🎨 テーマ & UI": "",
+    "aaron-bond.better-comments",
+    "naumovs.color-highlight",
+    
+    "// 🛠️ 開発ツール": "",
+    "humao.rest-client",
+    "ms-vscode.powershell"
+  ],
+  
+  "// ⚠️ 非推奨・競合する拡張機能": "",
+  "unwantedRecommendations": [
+    "ms-vscode.vscode-typescript",
+    "hookyqr.beautify",
+    "ms-vscode.vscode-css"
+  ]
+}

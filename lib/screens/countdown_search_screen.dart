@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/countdown.dart';
 import '../services/countdown_search_service.dart';
-import '../services/trend_ranking_service.dart';
+import '../services/mvp_analytics_client.dart';
 import '../widgets/enhanced_countdown_card.dart';
 import 'create_countdown_screen.dart';
 
@@ -137,10 +137,20 @@ class _CountdownSearchScreenState extends State<CountdownSearchScreen> {
     });
 
     try {
-      final results = await TrendRankingService.getCountdownsByCategory(
+      final rankingResults = await MVPAnalyticsClient.getTrendRanking(
         category: category,
         limit: 20,
       );
+      
+      final results = rankingResults.map((item) => Countdown(
+        id: item.countdownId,
+        eventName: item.countdownId,
+        eventDate: DateTime.now().add(const Duration(days: 1)),
+        category: category,
+        creatorId: '',
+        participantsCount: 0,
+        commentsCount: 0,
+      )).toList();
 
       setState(() {
         _categoryResults = results;

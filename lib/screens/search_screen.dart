@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../services/trend_ranking_service.dart';
+import '../services/mvp_analytics_client.dart';
 import '../models/trend_ranking.dart';
 import '../models/countdown.dart';
 import 'thread_screen.dart';
@@ -59,9 +59,8 @@ class SearchScreen extends StatelessWidget {
             ],
           ),
         ),
-        FutureBuilder<List<TrendRanking>>(
-          future: TrendRankingService.getTrendRankings(
-            type: RankingType.overall,
+        FutureBuilder<List<TrendRankingItem>>(
+          future: MVPAnalyticsClient.getTrendRanking(
             limit: 50,
           ),
           builder: (context, snapshot) {
@@ -90,6 +89,7 @@ class SearchScreen extends StatelessWidget {
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
                   final ranking = rankings[index];
+                  final rank = index + 1;
                   
                   return Container(
                     margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
@@ -104,32 +104,26 @@ class SearchScreen extends StatelessWidget {
                         backgroundColor: index == 0 ? Colors.amber : 
                                         index == 1 ? Colors.grey[400] :
                                         Colors.brown[300],
-                        child: Text('${ranking.rank}'),
+                        child: Text('$rank'),
                       ),
-                      title: Text(ranking.eventName),
-                      subtitle: Text('カテゴリ: ${ranking.category} | スコア: ${ranking.trendScore.toInt()}'),
+                      title: Text(ranking.countdownId),
+                      subtitle: Text('スコア: ${ranking.trendScore.toInt()}'),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.people, size: 16, color: Colors.grey[600]),
-                          Text(' ${ranking.participantsCount}'),
-                          const SizedBox(width: 8),
-                          Icon(Icons.comment, size: 16, color: Colors.grey[600]),
-                          Text(' ${ranking.commentsCount}'),
-                          const SizedBox(width: 8),
-                          Icon(Icons.favorite, size: 16, color: Colors.grey[600]),
-                          Text(' ${ranking.participantsCount}'),
+                          Icon(Icons.trending_up, size: 16, color: Colors.grey[600]),
+                          Text(' ${ranking.trendScore.toInt()}'),
                         ],
                       ),
                       onTap: () {
                         final countdown = Countdown(
                           id: ranking.countdownId,
-                          eventName: ranking.eventName,
-                          eventDate: ranking.eventDate,
-                          category: ranking.category,
+                          eventName: ranking.countdownId,
+                          eventDate: DateTime.now().add(const Duration(days: 1)),
+                          category: 'トレンド',
                           creatorId: '',
-                          participantsCount: ranking.participantsCount,
-                          commentsCount: ranking.commentsCount,
+                          participantsCount: 0,
+                          commentsCount: 0,
                         );
                         Navigator.push(
                           context,

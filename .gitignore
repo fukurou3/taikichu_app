@@ -43,3 +43,46 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# 🔐 セキュリティ関連（絶対にコミットしない）
+service-account.json
+.env.development
+.env.local
+.env.production
+firebase-debug.log
+.firebase/
+**/google-services.json
+**/GoogleService-Info.plist
+
+# 🐳 Docker & ローカル開発環境
+.docker-volumes/
+docker-compose.override.yml
+.env.override
+
+# 📊 ログ・レポート・一時ファイル
+migration_*.log
+migration_report_*.json
+health-check-*.log
+*.debug.log
+.vscode/settings.json.local
+
+# 🧪 テスト関連
+coverage/
+test-results/
+*.coverage
+.nyc_output/
+
+# 📦 依存関係・キャッシュ
+node_modules/
+.npm/
+.yarn/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# 🏗️ ビルド成果物
+build/
+dist/
+*.so
+*.dylib
+*.dll

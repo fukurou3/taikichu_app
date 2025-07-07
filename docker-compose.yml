@@ -1,4 +1,3 @@
-version: '3.8'
 
 services:
   # Redis - 高速データストレージ
@@ -18,22 +17,25 @@ services:
 
   # Pub/Sub Emulator - Google Cloud Pub/Sub ローカル環境
   pubsub-emulator:
-    image: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    image: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
     container_name: taikichu-pubsub-emulator
     ports:
       - "8085:8085"
     environment:
       - PUBSUB_PROJECT_ID=taikichu-app-c8dcd
+      - PUBSUB_EMULATOR_HOST=0.0.0.0:8085
     command: >
       bash -c "
-        gcloud components install pubsub-emulator --quiet &&
+        apt-get update && 
+        apt-get install -y google-cloud-cli-pubsub-emulator curl &&
         gcloud beta emulators pubsub start --host-port=0.0.0.0:8085 --project=taikichu-app-c8dcd
       "
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8085"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 30s
 
   # Analytics Service - 統一パイプライン処理エンジン
   analytics-service:
@@ -42,14 +44,18 @@ services:
       dockerfile: Dockerfile
     container_name: taikichu-analytics-service
     ports:
-      - "8080:8080"
+      - "${ANALYTICS_SERVICE_PORT:-8080}:8080"
     environment:
       - REDIS_HOST=redis
-      - REDIS_PORT=6379
+      - REDIS_PORT=${REDIS_PORT:-6379}
       - PUBSUB_EMULATOR_HOST=pubsub-emulator:8085
-      - PUBSUB_PROJECT_ID=taikichu-app-c8dcd
+      - PUBSUB_PROJECT_ID=${PROJECT_ID:-taikichu-app-c8dcd}
       - GOOGLE_APPLICATION_CREDENTIALS=/app/service-account.json
-      - ENVIRONMENT=development
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - DEBUG=${DEBUG:-true}
+      - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
+    env_file:
+      - .env.development
     depends_on:
       redis:
         condition: service_healthy
@@ -57,7 +63,10 @@ services:
         condition: service_healthy
     volumes:
       - ./analytics-service:/app
-      - ./service-account.json:/app/service-account.json:ro
+      - type: bind
+        source: ./service-account.json
+        target: /app/service-account.json
+        read_only: true
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
@@ -72,23 +81,56 @@ services:
     working_dir: /app
     ports:
       - "9099:9099"  # Firebase Auth Emulator
-      - "8080:8080"  # Cloud Functions Emulator
+      - "5001:5001"  # Cloud Functions Emulator
       - "8000:8000"  # Firestore Emulator
       - "4000:4000"  # Firebase Emulator Suite UI
     environment:
       - FIRESTORE_EMULATOR_HOST=0.0.0.0:8000
       - FIREBASE_AUTH_EMULATOR_HOST=0.0.0.0:9099
+      - FIREBASE_FUNCTIONS_EMULATOR_HOST=0.0.0.0:5001
       - PUBSUB_EMULATOR_HOST=pubsub-emulator:8085
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/service-account.json
     volumes:
       - .:/app
+      - ./service-account.json:/app/service-account.json:ro
+      - firebase_emulator_data:/app/.firebase
     command: >
       sh -c "
         npm install -g firebase-tools &&
         cd /app &&
-        firebase emulators:start --only firestore,auth,functions,pubsub --host 0.0.0.0
+        npm install &&
+        firebase emulators:start --only firestore,auth,functions --host 0.0.0.0 --import /app/.firebase/seed_data --export-on-exit /app/.firebase/seed_data
       "
     depends_on:
       - pubsub-emulator
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # Data Migration Service - データ移行ツール
+  migration-service:
+    build:
+      context: ./migration_scripts
+      dockerfile: Dockerfile
+    container_name: taikichu-migration
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/service-account.json
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+    volumes:
+      - ./migration_scripts:/app/scripts
+      - ./service-account.json:/app/service-account.json:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      analytics-service:
+        condition: service_healthy
+    command: tail -f /dev/null  # 常駐させてコマンド実行可能にする
+    profiles:
+      - migration  # プロファイルで分離
 
   # Nginx - リバースプロキシ（開発用）
   nginx:
@@ -105,6 +147,8 @@ services:
 
 volumes:
   redis_data:
+    driver: local
+  firebase_emulator_data:
     driver: local
 
 networks:

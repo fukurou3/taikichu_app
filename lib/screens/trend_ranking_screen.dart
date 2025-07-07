@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/trend_ranking.dart';
-import '../services/trend_ranking_service.dart';
+import '../services/mvp_analytics_client.dart';
 import '../widgets/trend_ranking_card.dart';
 
 class TrendRankingScreen extends StatefulWidget {
@@ -75,9 +75,9 @@ class _TrendRankingScreenState extends State<TrendRankingScreen> {
           
           // ランキング一覧
           Expanded(
-            child: FutureBuilder<List<TrendRanking>>(
-              future: TrendRankingService.getTrendRankings(
-                type: _selectedType,
+            child: FutureBuilder<List<TrendRankingItem>>(
+              future: MVPAnalyticsClient.getTrendRanking(
+                category: _selectedType == RankingType.overall ? null : _selectedType.displayName,
                 limit: 20,
               ),
               builder: (context, snapshot) {
@@ -112,7 +112,20 @@ class _TrendRankingScreenState extends State<TrendRankingScreen> {
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     itemCount: rankings.length,
                     itemBuilder: (context, index) {
-                      return TrendRankingCard(ranking: rankings[index]);
+                      final ranking = rankings[index];
+                      final trendRanking = TrendRanking(
+                        countdownId: ranking.countdownId,
+                        eventName: ranking.countdownId,
+                        category: _selectedType.displayName,
+                        eventDate: DateTime.now().add(const Duration(days: 1)),
+                        participantsCount: 0,
+                        commentsCount: 0,
+                        sharesCount: 0,
+                        trendScore: ranking.trendScore,
+                        rank: index + 1,
+                        updatedAt: DateTime.now(),
+                      );
+                      return TrendRankingCard(ranking: trendRanking);
                     },
                   ),
                 );
