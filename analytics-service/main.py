@@ -64,12 +64,12 @@ class AnalyticsProcessor:
     def __init__(self):
         self.redis = redis.Redis(connection_pool=redis_client)
         
-    def process_event(self, event: Dict[str, Any]) -> Dict[str, Any]:
+    def process_unified_event(self, event: Dict[str, Any]) -> Dict[str, Any]:
         """
-        イベントを処理してRedisを更新
+        統一イベント処理メソッド（新パイプライン）
         
         Args:
-            event: Pub/Subから受信したイベントデータ
+            event: 統一イベントデータ
             
         Returns:
             処理結果
@@ -77,71 +77,102 @@ class AnalyticsProcessor:
         start_time = time.time()
         
         try:
+            # イベント検証
             event_type = event.get('type')
-            countdown_id = event.get('countdownId')
+            countdown_id = event.get('countdownId') 
             user_id = event.get('userId')
+            event_id = event.get('eventId', f"{countdown_id}_{event_type}_{int(time.time())}")
             
-            if not all([event_type, countdown_id, user_id]):
+            if not all([event_type, countdown_id]):
                 raise ValueError(f"Missing required fields: {event}")
             
-            logger.info(f"Processing event: {event_type} for countdown {countdown_id}")
+            logger.info(f"[UNIFIED] Processing event: {event_type} for countdown {countdown_id}")
             
-            # パイプライン処理で複数のRedis操作をまとめて実行
+            # Redis パイプライン処理
             pipe = self.redis.pipeline()
             
-            # 1. トレンドスコア更新
+            # 1. 重複チェック（同一イベントの重複実行防止）
+            duplicate_key = f"processed:{event_id}"
+            if self.redis.exists(duplicate_key):
+                logger.warning(f"Duplicate event detected: {event_id}")
+                return {
+                    'success': True,
+                    'message': 'Duplicate event ignored',
+                    'event_id': event_id,
+                    'execution_time': time.time() - start_time
+                }
+            
+            # 重複防止マーク（5分間有効）
+            pipe.setex(duplicate_key, 300, 1)
+            
+            # 2. トレンドスコア統一更新
             score_delta = SCORE_WEIGHTS.get(event_type, 0)
             if score_delta != 0:
                 trend_key = TREND_SCORE_KEY.format(countdown_id=countdown_id)
                 pipe.incrbyfloat(trend_key, score_delta)
                 pipe.expire(trend_key, 86400 * 7)  # 7日間有効
                 
-                logger.debug(f"Trend score delta: {score_delta} for {countdown_id}")
+                logger.debug(f"[UNIFIED] Trend score delta: {score_delta} for {countdown_id}")
             
-            # 2. カウンター更新
+            # 3. カウンター統一更新
             counter_type = self._get_counter_type(event_type)
             if counter_type:
                 counter_key = COUNTER_KEY.format(type=counter_type, countdown_id=countdown_id)
-                increment = 1 if 'added' in event_type else -1
+                increment = 1 if 'added' in event_type or event_type == 'view' else -1
                 pipe.incrby(counter_key, increment)
                 pipe.expire(counter_key, 86400 * 30)  # 30日間有効
                 
-                logger.debug(f"Counter {counter_type}: {increment} for {countdown_id}")
+                logger.debug(f"[UNIFIED] Counter {counter_type}: {increment} for {countdown_id}")
             
-            # 3. ランキング更新（グローバル）
+            # 4. ランキング統一更新
             if score_delta != 0:
+                # 現在のスコアを取得して更新
                 current_score = self.redis.get(TREND_SCORE_KEY.format(countdown_id=countdown_id))
-                if current_score:
-                    pipe.zadd(GLOBAL_RANKING_KEY, {countdown_id: float(current_score)})
+                if current_score is not None:
+                    new_score = float(current_score) + score_delta
+                    pipe.zadd(GLOBAL_RANKING_KEY, {countdown_id: new_score})
                     pipe.expire(GLOBAL_RANKING_KEY, 86400)  # 24時間有効
             
-            # 4. メタデータ保存
-            metadata_key = f"metadata:{countdown_id}"
-            pipe.hset(metadata_key, {
+            # 5. 活動メタデータ更新
+            metadata_key = f"activity:{countdown_id}"
+            activity_data = {
                 'last_event': event_type,
                 'last_updated': datetime.now(timezone.utc).isoformat(),
-                'user_id': user_id
-            })
+                'event_count': 1,  # ハッシュフィールドの increment 用
+            }
+            if user_id:
+                activity_data['last_user'] = user_id
+                
+            pipe.hset(metadata_key, activity_data)
+            pipe.hincrby(metadata_key, 'event_count', 1)
             pipe.expire(metadata_key, 86400 * 7)  # 7日間有効
+            
+            # 6. 時間別集計（オプション）
+            hour_key = f"hourly:{datetime.now(timezone.utc).strftime('%Y%m%d_%H')}:{event_type}"
+            pipe.incr(hour_key)
+            pipe.expire(hour_key, 86400 * 2)  # 48時間有効
             
             # パイプライン実行
             results = pipe.execute()
             
             execution_time = time.time() - start_time
             
-            logger.info(f"Event processed successfully in {execution_time:.3f}s")
+            logger.info(f"[UNIFIED] Event processed successfully in {execution_time:.3f}s")
             
             return {
                 'success': True,
+                'event_id': event_id,
                 'event_type': event_type,
                 'countdown_id': countdown_id,
                 'execution_time': execution_time,
-                'results': len(results)
+                'pipeline_operations': len(results),
+                'score_delta': score_delta,
+                'counter_increment': increment if counter_type else 0
             }
             
         except Exception as e:
             execution_time = time.time() - start_time
-            logger.error(f"Error processing event in {execution_time:.3f}s: {e}")
+            logger.error(f"[UNIFIED] Error processing event in {execution_time:.3f}s: {e}")
             
             return {
                 'success': False,
@@ -150,6 +181,19 @@ class AnalyticsProcessor:
                 'countdown_id': event.get('countdownId'),
                 'execution_time': execution_time
             }
+    
+    def process_event(self, event: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        レガシーイベント処理（後方互換性）
+        
+        Args:
+            event: Pub/Subから受信したイベントデータ
+            
+        Returns:
+            処理結果
+        """
+        # 統一処理に転送
+        return self.process_unified_event(event)
     
     def _get_counter_type(self, event_type: str) -> Optional[str]:
         """イベントタイプからカウンタータイプを取得"""
@@ -206,12 +250,12 @@ class AnalyticsProcessor:
 processor = AnalyticsProcessor()
 
 
-@app.route('/analytics-webhook', methods=['POST'])
-def analytics_webhook():
+@app.route('/process-events', methods=['POST'])
+def process_events():
     """
-    Pub/Sub からのウェブフック受信エンドポイント
+    Pub/Sub からのイベント処理エンドポイント（統一パイプライン）
     
-    Pub/Sub プッシュサブスクリプションからイベントを受信
+    Pub/Sub プッシュサブスクリプションからイベントを受信して統一処理
     """
     try:
         # Pub/Sub メッセージデコード
@@ -230,14 +274,36 @@ def analytics_webhook():
         data = base64.b64decode(pubsub_message.get('data', '')).decode('utf-8')
         event = json.loads(data)
         
-        # イベント処理
-        result = processor.process_event(event)
+        # 統一イベント処理
+        result = processor.process_unified_event(event)
         
         # 成功レスポンス（Pub/Subへの確認応答）
         return jsonify(result), 200
         
     except Exception as e:
-        logger.error(f"Error in webhook: {e}")
+        logger.error(f"Error in unified event processing: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/events', methods=['POST'])
+def direct_event():
+    """
+    クライアントからの直接イベント送信エンドポイント
+    
+    Flutter アプリから直接イベントを受信（高速パス）
+    """
+    try:
+        event = request.get_json()
+        if not event:
+            return jsonify({'error': 'No JSON data'}), 400
+        
+        # 統一イベント処理
+        result = processor.process_unified_event(event)
+        
+        return jsonify(result), 200
+        
+    except Exception as e:
+        logger.error(f"Error in direct event processing: {e}")
         return jsonify({'error': str(e)}), 500
 
 

@@ -1,44 +1,102 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // ユーザー認証が必要な基本ルール
+    // デフォルトでアクセス拒否（セキュリティ強化）
     match /{document=**} {
-      allow read, write: if request.auth != null;
+      allow read, write: if false;
+    }
+    
+    // ヘルパー関数：Cloud Functions サービスアカウントかチェック
+    function isServiceAccount() {
+      return request.auth != null && 
+             (request.auth.token.firebase.sign_in_provider == 'custom' ||
+              request.auth.uid == 'firebase-adminsdk');
+    }
+    
+    // ヘルパー関数：認証済みユーザーかチェック
+    function isAuthenticated() {
+      return request.auth != null && request.auth.uid != null;
+    }
+    
+    // ヘルパー関数：データの所有者かチェック
+    function isOwner(ownerId) {
+      return isAuthenticated() && request.auth.uid == ownerId;
     }
     
     // カウントダウン（counts）コレクション
     match /counts/{countdownId} {
-      allow read: if true; // 誰でも読み取り可能
-      allow create: if request.auth != null;
-      allow update: if request.auth != null;
-      allow delete: if request.auth != null && request.auth.uid == resource.data.creatorId;
+      allow read: if true; // 読み取りは公開
+      allow create: if isAuthenticated() && 
+                       request.auth.uid == request.resource.data.creatorId;
+      allow update: if isOwner(resource.data.creatorId) || isServiceAccount();
+      allow delete: if isOwner(resource.data.creatorId);
     }
     
     // コメント（comments）コレクション
     match /comments/{commentId} {
-      allow read: if true; // 誰でも読み取り可能
-      allow create: if request.auth != null;
-      allow update: if request.auth != null && request.auth.uid == resource.data.authorId;
-      allow delete: if request.auth != null && request.auth.uid == resource.data.authorId;
+      allow read: if true; // 読み取りは公開
+      allow create: if isAuthenticated() && 
+                       request.auth.uid == request.resource.data.authorId &&
+                       request.resource.data.keys().hasAll(['authorId', 'countdownId', 'content', 'createdAt']);
+      allow update: if isOwner(resource.data.authorId) && 
+                       !request.resource.data.diff(resource.data).affectedKeys().hasAny(['authorId', 'countdownId', 'createdAt']);
+      allow delete: if isOwner(resource.data.authorId);
     }
     
-    // いいね（countdownLikes）コレクション
-    match /countdownLikes/{likeId} {
+    // いいね（likes）コレクション  
+    match /likes/{likeId} {
       allow read: if true;
-      allow create: if request.auth != null;
-      allow delete: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow create: if isAuthenticated() && 
+                       request.auth.uid == request.resource.data.userId &&
+                       request.resource.data.keys().hasAll(['userId', 'countdownId', 'createdAt']);
+      allow update: if false; // いいねは作成後変更不可
+      allow delete: if isOwner(resource.data.userId);
+    }
+    
+    // 参加者（participants）コレクション
+    match /participants/{participantId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && 
+                       request.auth.uid == request.resource.data.userId &&
+                       request.resource.data.keys().hasAll(['userId', 'countdownId', 'joinedAt']);
+      allow update: if false; // 参加は作成後変更不可
+      allow delete: if isOwner(resource.data.userId);
     }
     
     // トレンドランキング（trendRankings）コレクション
     match /trendRankings/{rankingId} {
-      allow read: if true; // 誰でも読み取り可能
-      allow write: if false; // Cloud Functionsからのみ書き込み可能
+      allow read: if true; // 読み取りは公開
+      allow write: if isServiceAccount(); // Cloud Functionsからのみ書き込み可能
     }
     
     // 分散カウンター用シャード（countdownShards）コレクション
     match /countdownShards/{shardId} {
       allow read: if true;
-      allow write: if false; // Cloud Functionsからのみ書き込み可能
+      allow write: if isServiceAccount(); // Cloud Functionsからのみ書き込み可能
+    }
+    
+    // ユーザープロファイル（users）コレクション
+    match /users/{userId} {
+      allow read: if true; // プロファイルは公開
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+      allow update: if isOwner(userId) && 
+                       !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdAt']);
+      allow delete: if isOwner(userId);
+    }
+    
+    // 通知（notifications）コレクション
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && request.auth.uid == resource.data.userId;
+      allow create: if isServiceAccount(); // Cloud Functionsからのみ作成可能
+      allow update: if isOwner(resource.data.userId) && 
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+      allow delete: if isOwner(resource.data.userId);
+    }
+    
+    // システム統計（analytics）コレクション - 分析基盤用
+    match /analytics/{document} {
+      allow read: if false; // 内部データのため読み取り不可
+      allow write: if isServiceAccount(); // Cloud Functionsからのみ書き込み可能
     }
   }
 }

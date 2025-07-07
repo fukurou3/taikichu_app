@@ -58,36 +58,6 @@ class ScalableTrendService {
     }
   }
 
-  /// 【危険】日次でのトレンドスコアリセット - 緊急停止中
-  /// 
-  /// ⚠️ この関数は10万件のデータで完全に破綻し、数万円のコストを発生させます
-  /// ⚠️ 現在は緊急停止中です。絶対に実行しないでください。
-  /// ⚠️ Cloud Scheduler で設定されている場合は直ちに削除してください。
-  /// 
-  /// 問題点:
-  /// - 全カウントダウンを100件ずつ読み取り → 10万件で1000クエリ
-  /// - 実行時間: 数時間 → Cloud Functions タイムアウト
-  /// - コスト: 10万件で月額$10,000以上
-  @Deprecated('EMERGENCY STOP - This function will bankrupt your Firebase bill!')
-  static Future<void> dailyTrendScoreDecay() async {
-    // 🚨 緊急停止: この関数は絶対に実行してはいけません
-    throw Exception('''
-🚨 EMERGENCY STOP 🚨
-この関数は重大なコスト問題を引き起こします！
-
-問題:
-- 10万件のデータで月額 \$10,000+ のコスト
-- 実行時間: 数時間でタイムアウト
-- Firestore読み取り数: 1000+ クエリ
-
-解決策:
-新しいリアルタイム分析基盤を使用してください。
-詳細は cloud_functions_architecture.md を参照。
-
-この関数を Cloud Scheduler で実行している場合は
-直ちに無効化してください！
-    ''');
-  }
 
   /// 効率的なトレンドランキング取得
   /// 
