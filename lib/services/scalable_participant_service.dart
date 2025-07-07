@@ -10,43 +10,32 @@ import 'mvp_analytics_client.dart';
 class ScalableParticipantService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  /// カウントダウンへの参加/参加解除（分散カウンター対応）
+  /// 【統一パイプライン】カウントダウンへの参加/参加解除
+  /// 
+  /// 🚀 クライアントはイベント発行のみ、Firestore更新はサーバーサイドで実行
+  /// 💡 二重書き込み問題を解決し、データ整合性を保証
   static Future<bool> toggleParticipation(String countdownId) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw Exception('ログインが必要です');
 
     try {
-      // 参加状態を確認・更新
-      final participantRef = _firestore
-          .collection('participants')
-          .doc('${countdownId}_${user.uid}');
-
-      return await _firestore.runTransaction((transaction) async {
-        final participantSnapshot = await transaction.get(participantRef);
-        final isCurrentlyParticipating = participantSnapshot.exists;
-        
-        if (isCurrentlyParticipating) {
-          // 参加解除
-          transaction.delete(participantRef);
-          
-          // 🚀 統一パイプライン: 参加解除イベント送信
-          await UnifiedAnalyticsService.sendParticipationEvent(countdownId, false);
-          
-          return false;
-        } else {
-          // 参加追加
-          transaction.set(participantRef, {
-            'countdownId': countdownId,
-            'userId': user.uid,
-            'participatedAt': FieldValue.serverTimestamp(),
-          });
-          
-          // 🚀 統一パイプライン: 参加追加イベント送信
-          await UnifiedAnalyticsService.sendParticipationEvent(countdownId, true);
-          
-          return true;
-        }
-      });
+      // 現在の参加状態を **読み取り専用** で確認
+      final isCurrentlyParticipating = await isParticipating(countdownId);
+      
+      // 🚀 統一パイプラインへイベントを送信するだけ！
+      // Firestore更新はサーバーサイド（Cloud Run）で実行される
+      final success = await UnifiedAnalyticsService.sendParticipationEvent(
+        countdownId, 
+        !isCurrentlyParticipating
+      );
+      
+      if (!success) {
+        throw Exception('参加イベントの送信に失敗しました');
+      }
+      
+      // UI即時反映のため、成功したと仮定して新しい状態を返す
+      // 実際のFirestore状態は数秒後にサーバーサイドで更新される
+      return !isCurrentlyParticipating;
       
     } catch (e) {
       print('ScalableParticipantService - Error toggling participation: $e');

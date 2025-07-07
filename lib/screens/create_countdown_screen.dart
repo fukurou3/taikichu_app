@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/countdown.dart';
 import '../services/countdown_service.dart';
+import '../services/unified_analytics_service.dart';
 
 class CreateCountdownScreen extends StatefulWidget {
   final String? preFilledEventName;
@@ -208,7 +209,12 @@ class _CreateCountdownScreenState extends State<CreateCountdownScreen> {
         participantsCount: 1,
       );
 
-      await CountdownService.addCountdown(newCountdown);
+      // 🚀 統一パイプライン: カウントダウン作成イベント送信
+      final success = await CountdownService.createCountdownEvent(newCountdown);
+      
+      if (!success) {
+        throw Exception('カウントダウン作成イベントの送信に失敗しました');
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
