@@ -19,7 +19,9 @@
       "Bash(gcloud scheduler jobs list:*)",
       "Bash(rm:*)",
       "Bash(mv:*)",
-      "Bash(firebase login:*)"
+      "Bash(firebase login:*)",
+      "Bash(firebase firestore:rules:*)",
+      "Bash(firebase projects:list:*)"
     ],
     "deny": []
   }
