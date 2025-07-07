@@ -36,23 +36,13 @@ class CountdownLikeService {
       final docSnapshot = await likeDoc.get();
       
       if (docSnapshot.exists) {
-        // いいね解除
-        await likeDoc.delete();
-        
-        // 🚀 統一パイプライン: いいね削除イベント送信
-        await UnifiedAnalyticsService.sendLikeEvent(countdownId, false);
-        return false;
+        // 🚀 統一パイプライン: いいね削除イベント送信（Firestore更新はサーバーサイドで実行）
+        final success = await UnifiedAnalyticsService.sendLikeEvent(countdownId, false);
+        return success ? false : docSnapshot.exists; // 成功時はfalse（削除）、失敗時は元の状態
       } else {
-        // いいね追加
-        await likeDoc.set({
-          'countdownId': countdownId,
-          'userId': userId,
-          'createdAt': Timestamp.now(),
-        });
-        
-        // 🚀 統一パイプライン: いいね追加イベント送信
-        await UnifiedAnalyticsService.sendLikeEvent(countdownId, true);
-        return true;
+        // 🚀 統一パイプライン: いいね追加イベント送信（Firestore更新はサーバーサイドで実行）
+        final success = await UnifiedAnalyticsService.sendLikeEvent(countdownId, true);
+        return success ? true : false; // 成功時はtrue（追加）、失敗時はfalse
       }
     } catch (e) {
       print('Error toggling like: $e');

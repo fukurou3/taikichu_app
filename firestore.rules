@@ -143,24 +143,10 @@ service cloud.firestore {
     // ==============================================
     
     /// comments - コメント
-    /// ✅ 作成者のみ編集可能
+    /// ❌ クライアントからの直接書き込み完全禁止
     match /comments/{commentId} {
       allow read: if true; // 公開読み取り
-      
-      // 作成：認証済みユーザー、必須フィールド必要
-      allow create: if isAuthenticated() && 
-                       request.auth.uid == request.resource.data.authorId &&
-                       hasRequiredFields(['authorId', 'countdownId', 'content', 'createdAt']) &&
-                       request.resource.data.createdAt == request.time;
-      
-      // 更新：作成者のみ、不変フィールド保護、内容のみ変更可能
-      allow update: if isOwner(resource.data.authorId) && 
-                       immutableFields(['authorId', 'countdownId', 'createdAt']) &&
-                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content', 'updatedAt']) &&
-                       request.resource.data.updatedAt == request.time;
-      
-      // 削除：作成者のみ
-      allow delete: if isOwner(resource.data.authorId);
+      allow write: if isServiceAccount(); // サービスアカウントのみ書き込み可能
     }
     
     // ==============================================
@@ -168,39 +154,17 @@ service cloud.firestore {
     // ==============================================
     
     /// likes - いいね
-    /// ✅ 本人のみ作成・削除、変更不可
+    /// ❌ クライアントからの直接書き込み完全禁止
     match /likes/{likeId} {
       allow read: if true; // 公開読み取り
-      
-      // 作成：本人のみ、必須フィールド必要
-      allow create: if isAuthenticated() && 
-                       request.auth.uid == request.resource.data.userId &&
-                       hasRequiredFields(['userId', 'countdownId', 'createdAt']) &&
-                       request.resource.data.createdAt == request.time;
-      
-      // 更新：禁止（いいねは不変）
-      allow update: if false;
-      
-      // 削除：本人のみ
-      allow delete: if isOwner(resource.data.userId);
+      allow write: if isServiceAccount(); // サービスアカウントのみ書き込み可能
     }
     
     /// participants - 参加者
-    /// ✅ 本人のみ作成・削除、変更不可
+    /// ❌ クライアントからの直接書き込み完全禁止
     match /participants/{participantId} {
       allow read: if true; // 公開読み取り
-      
-      // 作成：本人のみ、必須フィールド必要
-      allow create: if isAuthenticated() && 
-                       request.auth.uid == request.resource.data.userId &&
-                       hasRequiredFields(['userId', 'countdownId', 'joinedAt']) &&
-                       request.resource.data.joinedAt == request.time;
-      
-      // 更新：禁止（参加は不変）
-      allow update: if false;
-      
-      // 削除：本人のみ
-      allow delete: if isOwner(resource.data.userId);
+      allow write: if isServiceAccount(); // サービスアカウントのみ書き込み可能
     }
     
     // ==============================================
@@ -208,23 +172,10 @@ service cloud.firestore {
     // ==============================================
     
     /// countdowns - カウントダウン本体
-    /// ✅ 作成者のみ編集可能
+    /// ❌ クライアントからの直接書き込み完全禁止
     match /countdowns/{countdownId} {
       allow read: if true; // 公開読み取り
-      
-      // 作成：認証済みユーザー、必須フィールド必要
-      allow create: if isAuthenticated() && 
-                       request.auth.uid == request.resource.data.creatorId &&
-                       hasRequiredFields(['creatorId', 'eventName', 'eventDate', 'createdAt']) &&
-                       request.resource.data.createdAt == request.time;
-      
-      // 更新：作成者のみ、不変フィールド保護
-      allow update: if isOwner(resource.data.creatorId) && 
-                       immutableFields(['creatorId', 'createdAt']) &&
-                       request.resource.data.updatedAt == request.time;
-      
-      // 削除：作成者のみ
-      allow delete: if isOwner(resource.data.creatorId);
+      allow write: if isServiceAccount(); // サービスアカウントのみ書き込み可能
     }
     
     // ==============================================

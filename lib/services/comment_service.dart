@@ -23,16 +23,53 @@ class CommentService {
     });
   }
 
+  /// 【非推奨】直接コメント作成
+  /// ⚠️ 統一パイプライン移行後は使用禁止
+  @Deprecated('Use createCommentEvent() instead')
   static Future<void> addComment(Comment comment) async {
-    // コメントをFirestoreに保存
-    await _firestore.collection(_collection).add(comment.toFirestore());
-    
-    // 🚀 統一パイプライン: コメント追加イベント送信
-    await UnifiedAnalyticsService.sendCommentEvent(comment.countdownId);
+    throw UnimplementedError('Direct comment creation disabled for security - use unified pipeline');
   }
 
+  /// 【統一パイプライン】コメント作成イベント送信
+  static Future<bool> createCommentEvent(Comment comment) async {
+    try {
+      return await UnifiedAnalyticsService.sendEvent(
+        type: 'comment_created',
+        countdownId: comment.countdownId,
+        metadata: {
+          'authorId': comment.authorId,
+          'content': comment.content,
+          'commentId': comment.id,
+        },
+      );
+    } catch (e) {
+      print('CommentService - Error creating comment event: $e');
+      return false;
+    }
+  }
+
+  /// 【非推奨】直接コメント削除
+  /// ⚠️ 統一パイプライン移行後は使用禁止
+  @Deprecated('Use deleteCommentEvent() instead')
   static Future<void> deleteComment(String commentId) async {
-    await _firestore.collection(_collection).doc(commentId).delete();
+    throw UnimplementedError('Direct comment deletion disabled for security - use unified pipeline');
+  }
+
+  /// 【統一パイプライン】コメント削除イベント送信
+  static Future<bool> deleteCommentEvent(String commentId, String countdownId) async {
+    try {
+      return await UnifiedAnalyticsService.sendEvent(
+        type: 'comment_deleted',
+        countdownId: countdownId,
+        metadata: {
+          'commentId': commentId,
+          'reason': 'user_request',
+        },
+      );
+    } catch (e) {
+      print('CommentService - Error deleting comment event: $e');
+      return false;
+    }
   }
 
   static Future<int> getCommentCount(String countdownId) async {
