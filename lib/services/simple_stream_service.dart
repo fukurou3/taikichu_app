@@ -1,39 +1,53 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:async';
 import '../models/countdown.dart';
+import 'mvp_analytics_client.dart';
 
 class SimpleStreamService {
-  static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  static Timer? _refreshTimer;
+  static final StreamController<List<Countdown>> _streamController = StreamController<List<Countdown>>.broadcast();
 
-  /// シンプルなカウントダウンストリーム（キャッシュなし、複雑性なし）
+  /// 【移行完了】バックエンドAPI経由のカウントダウンストリーム
+  /// 
+  /// 🚀 Firestore直接読み取りを完全排除
+  /// ⚡ Cloud Run + Redis からの高速データ取得
+  /// 💡 定期的なポーリングでリアルタイム性を維持
   static Stream<List<Countdown>> getCountdownsStream({
     String? category,
     int limit = 50,
   }) {
-    print('SimpleStreamService - Starting stream with category: $category, limit: $limit');
+    print('SimpleStreamService - Starting API-based stream with category: $category, limit: $limit');
     
-    Query query = _firestore.collection('counts');
+    // 既存のタイマーをクリア
+    _refreshTimer?.cancel();
     
-    if (category != null && category.isNotEmpty) {
-      query = query.where('category', isEqualTo: category);
-    }
+    // 初回データ取得
+    _fetchAndEmitCountdowns(category, limit);
     
-    query = query.orderBy('eventDate', descending: false).limit(limit);
+    // 定期的なデータ更新（5秒間隔）
+    _refreshTimer = Timer.periodic(Duration(seconds: 5), (_) {
+      _fetchAndEmitCountdowns(category, limit);
+    });
     
-    return query.snapshots().map((snapshot) {
-      print('SimpleStreamService - Received ${snapshot.docs.length} documents');
+    return _streamController.stream;
+  }
+
+  /// バックエンドAPIからデータを取得してストリームに流す
+  static Future<void> _fetchAndEmitCountdowns(String? category, int limit) async {
+    try {
+      final countdownsData = await MVPAnalyticsClient.getCountdowns(
+        category: category,
+        limit: limit,
+      );
       
-      final countdowns = snapshot.docs.map((doc) {
+      print('SimpleStreamService - Received ${countdownsData.length} countdowns from API');
+      
+      final countdowns = countdownsData.map((data) {
         try {
-          final data = doc.data() as Map<String, dynamic>;
-          final description = data['description'] as String?;
-          
-          print('SimpleStreamService - Doc ${doc.id}: eventName="${data['eventName']}", description="$description"');
-          
           return Countdown(
-            id: doc.id,
+            id: data['id'] as String,
             eventName: data['eventName'] as String? ?? '無題',
-            description: description,
-            eventDate: (data['eventDate'] as Timestamp?)?.toDate() ?? DateTime.now(),
+            description: data['description'] as String?,
+            eventDate: data['eventDate'] != null ? DateTime.parse(data['eventDate'] as String) : DateTime.now(),
             category: data['category'] as String? ?? 'その他',
             imageUrl: data['imageUrl'] as String?,
             creatorId: data['creatorId'] as String? ?? 'unknown',
@@ -41,39 +55,61 @@ class SimpleStreamService {
             likesCount: data['likesCount'] as int? ?? 0,
             commentsCount: data['commentsCount'] as int? ?? 0,
             viewsCount: data['viewsCount'] as int? ?? 0,
-            recentCommentsCount: data['recentCommentsCount'] as int? ?? 0,
-            recentLikesCount: data['recentLikesCount'] as int? ?? 0,
-            recentViewsCount: data['recentViewsCount'] as int? ?? 0,
+            recentCommentsCount: 0, // バックエンドから取得するか計算
+            recentLikesCount: 0,
+            recentViewsCount: 0,
           );
         } catch (e) {
-          print('SimpleStreamService - Error creating countdown from doc ${doc.id}: $e');
+          print('SimpleStreamService - Error creating countdown from API data: $e');
           // エラーが発生した場合はスキップ
           return null;
         }
       }).where((countdown) => countdown != null).cast<Countdown>().toList();
       
       print('SimpleStreamService - Successfully created ${countdowns.length} countdown objects');
-      return countdowns;
-    }).handleError((error) {
-      print('SimpleStreamService - Stream error: $error');
-      return <Countdown>[];
-    });
+      _streamController.add(countdowns);
+      
+    } catch (e) {
+      print('SimpleStreamService - Error fetching countdowns: $e');
+      _streamController.add([]); // フォールバック
+    }
   }
 
-  /// コメントストリーム（シンプル版）
+  /// 【移行完了】バックエンドAPI経由のコメントストリーム
   static Stream<List<Map<String, dynamic>>> getCommentsStream(String countdownId) {
-    return _firestore
-        .collection('comments')
-        .where('countdownId', isEqualTo: countdownId)
-        .orderBy('createdAt', descending: false)
-        .snapshots()
-        .map((snapshot) => snapshot.docs.map((doc) => {
-              'id': doc.id,
-              ...doc.data(),
-            }).toList())
-        .handleError((error) {
-          print('SimpleStreamService - Comments error: $error');
-          return <Map<String, dynamic>>[];
-        });
+    final commentsController = StreamController<List<Map<String, dynamic>>>.broadcast();
+    Timer? commentsTimer;
+    
+    // 初回データ取得
+    _fetchAndEmitComments(countdownId, commentsController);
+    
+    // 定期的なデータ更新（10秒間隔）
+    commentsTimer = Timer.periodic(Duration(seconds: 10), (_) {
+      _fetchAndEmitComments(countdownId, commentsController);
+    });
+    
+    // ストリーム終了時のクリーンアップ
+    commentsController.onCancel = () {
+      commentsTimer?.cancel();
+    };
+    
+    return commentsController.stream;
+  }
+  
+  /// コメントデータを取得してストリームに流す
+  static Future<void> _fetchAndEmitComments(String countdownId, StreamController<List<Map<String, dynamic>>> controller) async {
+    try {
+      final comments = await MVPAnalyticsClient.getComments(countdownId);
+      controller.add(comments);
+    } catch (e) {
+      print('SimpleStreamService - Error fetching comments: $e');
+      controller.add([]); // フォールバック
+    }
+  }
+
+  /// リソースクリーンアップ
+  static void dispose() {
+    _refreshTimer?.cancel();
+    _streamController.close();
   }
 }

@@ -43,21 +43,14 @@ class ScalableLikeService {
     }
   }
 
-  /// 【統一パイプライン】いいね状態の確認
+  /// 【移行完了】いいね状態の確認（バックエンドAPI経由）
   /// 
-  /// 🚀 Redis高速アクセスでいいね状態を確認
-  /// ⚠️ Firestore直接アクセスは禁止
+  /// 🚀 Redis から高速取得（1-5ms）
+  /// 💰 Firestore読み取りコストを完全削除
   static Future<bool> isLiked(String countdownId, String userId) async {
     try {
-      // 🚀 統一パイプライン: Redis経由で高速状態確認
-      // 注意: 実装はMVPAnalyticsClientで行う
-      // 現時点では読み取り専用のため、Firestore読み取りを一時的に維持
-      // TODO: Cloud Runに個別ユーザーいいね状態API追加後、完全移行
-      final doc = await _firestore
-          .collection('likes')
-          .doc('${countdownId}_$userId')
-          .get();
-      return doc.exists;
+      final userState = await MVPAnalyticsClient.getUserState(userId, countdownId);
+      return userState['is_liked'] ?? false;
     } catch (e) {
       print('ScalableLikeService - Error checking like status: $e');
       return false;

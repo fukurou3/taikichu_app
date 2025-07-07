@@ -4,12 +4,12 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ==============================================
-    // 🚨 デフォルト書き込み完全禁止
-    // クライアントからの直接書き込みを原則禁止
+    // 🚨 Phase 0 完了: クライアント直接アクセス完全禁止
+    // 全てのデータアクセスは統一パイプライン経由
     // ==============================================
     match /{document=**} {
-      allow read: if request.auth != null; // 認証済みユーザーは読み取り可能
-      allow write: if false; // クライアントからの書き込みを完全禁止
+      allow read: if false; // クライアントからの読み取り完全禁止
+      allow write: if false; // クライアントからの書き込み完全禁止
     }
 
     // ==============================================
@@ -48,16 +48,16 @@ service cloud.firestore {
     // ==============================================
 
     /// counts - カウントダウン集計データ
-    /// ❌ クライアントからの直接書き込み完全禁止
+    /// ❌ クライアントからの直接アクセス完全禁止
     match /counts/{countdownId} {
-      allow read: if isAuthenticated(); // 認証済みユーザーは読み取り可能
+      allow read: if isServiceAccount(); // サービスアカウントのみ読み取り可能
       allow write: if isServiceAccount(); // サービスアカウントのみ書き込み可能
     }
 
     /// trendRankings - トレンドランキング集計データ
-    /// ❌ クライアントからの直接書き込み完全禁止
+    /// ❌ クライアントからの直接アクセス完全禁止
     match /trendRankings/{rankingId} {
-      allow read: if isAuthenticated(); // 認証済みユーザーは読み取り可能
+      allow read: if isServiceAccount(); // サービスアカウントのみ読み取り可能
       allow write: if isServiceAccount(); // サービスアカウントのみ書き込み可能
     }
 
@@ -80,16 +80,16 @@ service cloud.firestore {
     // ==============================================
 
     /// countdowns - カウントダウン本体
-    /// ❌ クライアントからの直接書き込み完全禁止
+    /// ❌ クライアントからの直接アクセス完全禁止
     match /countdowns/{countdownId} {
-      allow read: if isAuthenticated(); // 認証済みユーザーは読み取り可能
+      allow read: if isServiceAccount(); // サービスアカウントのみ読み取り可能
       allow write: if isServiceAccount(); // サービスアカウントのみ書き込み可能
     }
 
     /// comments - コメント
-    /// ❌ クライアントからの直接書き込み完全禁止
+    /// ❌ クライアントからの直接アクセス完全禁止
     match /comments/{commentId} {
-      allow read: if isAuthenticated(); // 認証済みユーザーは読み取り可能
+      allow read: if isServiceAccount(); // サービスアカウントのみ読み取り可能
       allow write: if isServiceAccount(); // サービスアカウントのみ書き込み可能
     }
 
@@ -98,16 +98,16 @@ service cloud.firestore {
     // ==============================================
 
     /// likes - いいね
-    /// ❌ クライアントからの直接書き込み完全禁止
+    /// ❌ クライアントからの直接アクセス完全禁止
     match /likes/{likeId} {
-      allow read: if isAuthenticated(); // 認証済みユーザーは読み取り可能
+      allow read: if isServiceAccount(); // サービスアカウントのみ読み取り可能
       allow write: if isServiceAccount(); // サービスアカウントのみ書き込み可能
     }
 
     /// participants - 参加者
-    /// ❌ クライアントからの直接書き込み完全禁止
+    /// ❌ クライアントからの直接アクセス完全禁止
     match /participants/{participantId} {
-      allow read: if isAuthenticated(); // 認証済みユーザーは読み取り可能
+      allow read: if isServiceAccount(); // サービスアカウントのみ読み取り可能
       allow write: if isServiceAccount(); // サービスアカウントのみ書き込み可能
     }
 

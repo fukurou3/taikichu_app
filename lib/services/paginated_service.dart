@@ -1,172 +1,116 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'mvp_analytics_client.dart';
 
 class PaginatedResult<T> {
   final List<T> items;
-  final DocumentSnapshot? lastDocument;
+  final int nextOffset;
   final bool hasMore;
 
   PaginatedResult({
     required this.items,
-    this.lastDocument,
+    required this.nextOffset,
     required this.hasMore,
   });
 }
 
 class PaginatedService {
-  static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static const int defaultPageSize = 10;
 
-  /// カウントダウンをページネーションで取得
+  /// 【移行完了】カウントダウンをページネーションで取得（バックエンドAPI経由）
   static Future<PaginatedResult<Map<String, dynamic>>> getCountdownsPaginated({
-    DocumentSnapshot? startAfter,
+    int offset = 0,
     int limit = defaultPageSize,
     String? category,
-    String orderBy = 'eventDate',
-    bool descending = false,
   }) async {
     try {
-      Query query = _firestore.collection('counts');
-
-      // カテゴリフィルター
-      if (category != null && category.isNotEmpty) {
-        query = query.where('category', isEqualTo: category);
-      }
-
-      // ソート
-      query = query.orderBy(orderBy, descending: descending);
-
-      // ページネーション
-      if (startAfter != null) {
-        query = query.startAfterDocument(startAfter);
-      }
-
-      // 制限 + 1（次のページがあるかチェック用）
-      query = query.limit(limit + 1);
-
-      final snapshot = await query.get();
-      final docs = snapshot.docs;
+      // バックエンドAPIからデータを取得（追加の1件でhasMoreを判定）
+      final countdownsData = await MVPAnalyticsClient.getCountdowns(
+        category: category,
+        limit: limit + 1,
+        offset: offset,
+      );
 
       // 次のページがあるかチェック
-      final hasMore = docs.length > limit;
-      final items = hasMore ? docs.take(limit).toList() : docs;
+      final hasMore = countdownsData.length > limit;
+      final items = hasMore ? countdownsData.take(limit).toList() : countdownsData;
 
       return PaginatedResult<Map<String, dynamic>>(
-        items: items.map((doc) => {
-          'id': doc.id,
-          ...doc.data() as Map<String, dynamic>,
-        }).toList(),
-        lastDocument: items.isNotEmpty ? items.last : null,
+        items: items,
+        nextOffset: offset + items.length,
         hasMore: hasMore,
       );
     } catch (e) {
       print('Error getting paginated countdowns: $e');
       return PaginatedResult<Map<String, dynamic>>(
         items: [],
+        nextOffset: offset,
         hasMore: false,
       );
     }
   }
 
-  /// コメントをページネーションで取得
+  /// 【移行完了】コメントをページネーションで取得（バックエンドAPI経由）
   static Future<PaginatedResult<Map<String, dynamic>>> getCommentsPaginated({
     required String countdownId,
-    DocumentSnapshot? startAfter,
+    int offset = 0,
     int limit = defaultPageSize,
   }) async {
     try {
-      Query query = _firestore.collection('comments')
-          .where('countdownId', isEqualTo: countdownId)
-          .orderBy('createdAt', descending: false);
+      // バックエンドAPIからコメントを取得
+      final commentsData = await MVPAnalyticsClient.getComments(
+        countdownId,
+        limit: limit + 1,
+        offset: offset,
+      );
 
-      if (startAfter != null) {
-        query = query.startAfterDocument(startAfter);
-      }
-
-      query = query.limit(limit + 1);
-
-      final snapshot = await query.get();
-      final docs = snapshot.docs;
-
-      final hasMore = docs.length > limit;
-      final items = hasMore ? docs.take(limit).toList() : docs;
+      final hasMore = commentsData.length > limit;
+      final items = hasMore ? commentsData.take(limit).toList() : commentsData;
 
       return PaginatedResult<Map<String, dynamic>>(
-        items: items.map((doc) => {
-          'id': doc.id,
-          ...doc.data() as Map<String, dynamic>,
-        }).toList(),
-        lastDocument: items.isNotEmpty ? items.last : null,
+        items: items,
+        nextOffset: offset + items.length,
         hasMore: hasMore,
       );
     } catch (e) {
       print('Error getting paginated comments: $e');
       return PaginatedResult<Map<String, dynamic>>(
         items: [],
+        nextOffset: offset,
         hasMore: false,
       );
     }
   }
 
-  /// トレンドランキングをページネーションで取得
+  /// 【移行完了】トレンドランキングをページネーションで取得（バックエンドAPI経由）
   static Future<PaginatedResult<Map<String, dynamic>>> getTrendRankingsPaginated({
-    DocumentSnapshot? startAfter,
+    int offset = 0,
     int limit = defaultPageSize,
-    String category = 'overall',
+    String? category,
   }) async {
     try {
-      Query query = _firestore.collection('trendRankings')
-          .where('category', isEqualTo: category)
-          .orderBy('rank', descending: false);
+      // MVPAnalyticsClient のランキングAPIを使用
+      final rankingItems = await MVPAnalyticsClient.getTrendRanking(
+        category: category,
+        limit: limit + 1,
+      );
 
-      if (startAfter != null) {
-        query = query.startAfterDocument(startAfter);
-      }
+      final hasMore = rankingItems.length > limit;
+      final items = hasMore ? rankingItems.take(limit).toList() : rankingItems;
 
-      query = query.limit(limit + 1);
-
-      final snapshot = await query.get();
-      final docs = snapshot.docs;
-
-      final hasMore = docs.length > limit;
-      final items = hasMore ? docs.take(limit).toList() : docs;
+      // TrendRankingItem を Map に変換
+      final itemsAsMap = items.map((item) => item.toJson()).toList();
 
       return PaginatedResult<Map<String, dynamic>>(
-        items: items.map((doc) => {
-          'id': doc.id,
-          ...doc.data() as Map<String, dynamic>,
-        }).toList(),
-        lastDocument: items.isNotEmpty ? items.last : null,
+        items: itemsAsMap,
+        nextOffset: offset + items.length,
         hasMore: hasMore,
       );
     } catch (e) {
       print('Error getting paginated trend rankings: $e');
       return PaginatedResult<Map<String, dynamic>>(
         items: [],
+        nextOffset: offset,
         hasMore: false,
       );
     }
-  }
-
-  /// 無限スクロール用のストリーム（リアルタイム更新対応）
-  static Stream<List<Map<String, dynamic>>> getCountdownsStream({
-    String? category,
-    int limit = 20,
-  }) {
-    Query query = _firestore.collection('counts');
-
-    if (category != null && category.isNotEmpty) {
-      query = query.where('category', isEqualTo: category);
-    }
-
-    return query
-        .orderBy('eventDate', descending: false)
-        .limit(limit)
-        .snapshots()
-        .map((snapshot) {
-      return snapshot.docs.map((doc) => {
-        'id': doc.id,
-        ...doc.data() as Map<String, dynamic>,
-      }).toList();
-    });
   }
 }

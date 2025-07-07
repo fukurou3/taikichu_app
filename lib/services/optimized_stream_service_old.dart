@@ -131,7 +131,7 @@ class OptimizedStreamService {
     }
   }
 
-  /// 【移行完了】最適化されたコメントストリーム（バックエンドAPI経由）
+  /// 最適化されたコメントストリーム
   static Stream<List<Comment>> getOptimizedCommentsStream({
     required String countdownId,
     int limit = 50,
@@ -147,124 +147,168 @@ class OptimizedStreamService {
         _commentStreamControllers.remove(key);
         _commentCache.remove(key);
         _lastUpdateTime.remove(key);
-        _pollingTimers[key]?.cancel();
-        _pollingTimers.remove(key);
       },
     );
     
     _commentStreamControllers[key] = controller;
     
-    _startOptimizedCommentStream(key, countdownId, limit, controller);
+    _startCommentStream(key, countdownId, limit, controller);
     
     return controller.stream;
   }
   
-  static void _startOptimizedCommentStream(
+  static void _startCommentStream(
     String key,
     String countdownId,
     int limit,
     StreamController<List<Comment>> controller,
   ) {
-    // 初回データ取得
-    _fetchOptimizedComments(key, countdownId, limit, controller);
-    
-    // 定期的なポーリング
-    final timer = Timer.periodic(Duration(seconds: cacheValidityDuration * 2), (_) {
-      _fetchOptimizedComments(key, countdownId, limit, controller);
-    });
-    
-    _pollingTimers[key] = timer;
+    _firestore
+        .collection('comments')
+        .where('countdownId', isEqualTo: countdownId)
+        .orderBy('createdAt', descending: false)
+        .limit(limit)
+        .snapshots()
+        .listen(
+      (snapshot) {
+        final now = DateTime.now();
+        final lastUpdate = _lastUpdateTime[key];
+        
+        // 新しいドキュメントがある場合のみ更新
+        final hasNewDocuments = snapshot.docChanges.any(
+          (change) => change.type == DocumentChangeType.added,
+        );
+        
+        if (!hasNewDocuments &&
+            lastUpdate != null && 
+            now.difference(lastUpdate).inSeconds < cacheValidityDuration &&
+            _commentCache.containsKey(key)) {
+          return;
+        }
+        
+        final comments = snapshot.docs.map((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          return Comment(
+            id: doc.id,
+            countdownId: data['countdownId'] as String,
+            content: data['content'] as String,
+            authorId: data['authorId'] as String,
+            authorName: data['authorName'] as String? ?? 'ユーザー',
+            createdAt: (data['createdAt'] as Timestamp).toDate(),
+            likesCount: data['likesCount'] as int? ?? 0,
+            repliesCount: data['repliesCount'] as int? ?? 0,
+          );
+        }).toList();
+        
+        // クライアント側でソート（Firestoreインデックスの制約回避）
+        comments.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+        
+        _commentCache[key] = comments;
+        _lastUpdateTime[key] = now;
+        
+        if (!controller.isClosed) {
+          controller.add(comments);
+        }
+      },
+      onError: (error) {
+        if (!controller.isClosed) {
+          controller.addError(error);
+        }
+      },
+    );
   }
 
-  static Future<void> _fetchOptimizedComments(
-    String key,
-    String countdownId,
-    int limit,
-    StreamController<List<Comment>> controller,
-  ) async {
-    try {
-      final now = DateTime.now();
-      final lastUpdate = _lastUpdateTime[key];
-      
-      // キャッシュが有効な場合はキャッシュから返す
-      if (lastUpdate != null && 
-          now.difference(lastUpdate).inSeconds < cacheValidityDuration &&
-          _commentCache.containsKey(key)) {
-        if (!controller.isClosed) {
-          controller.add(_commentCache[key]!);
-        }
-        return;
-      }
-      
-      // バックエンドAPIからコメントを取得
-      final commentsData = await MVPAnalyticsClient.getComments(countdownId, limit: limit);
-      
-      final comments = commentsData.map((data) {
-        return Comment(
-          id: data['id'] as String,
-          countdownId: data['countdownId'] as String,
-          content: data['content'] as String,
-          userId: data['userId'] as String,
-          userName: data['userName'] as String? ?? '匿名',
-          userAvatarUrl: data['userAvatarUrl'] as String?,
-          createdAt: data['createdAt'] != null ? DateTime.parse(data['createdAt'] as String) : DateTime.now(),
-          likesCount: data['likesCount'] as int? ?? 0,
-        );
-      }).toList();
-      
-      // キャッシュ更新
-      _commentCache[key] = comments;
-      _lastUpdateTime[key] = now;
-      
-      if (!controller.isClosed) {
-        controller.add(comments);
-      }
-      
-    } catch (e) {
-      print('OptimizedStreamService - Error fetching comments: $e');
-      if (!controller.isClosed) {
-        controller.addError(e);
-      }
-    }
+  /// バッチ更新でリアルタイム性を保ちつつパフォーマンス向上
+  static Stream<List<Countdown>> getBatchedCountdownsStream({
+    String? category,
+    int limit = 20,
+    Duration batchInterval = const Duration(seconds: 2),
+  }) {
+    return getOptimizedCountdownsStream(category: category, limit: limit)
+        .transform(StreamTransformer<List<Countdown>, List<Countdown>>.fromBind(
+          (stream) {
+            return stream
+                .distinct() // 重複する更新を除去
+                .debounceTime(batchInterval); // 指定時間内の更新をバッチ化
+          },
+        ));
   }
 
   /// キャッシュをクリア
-  static void clearCache() {
-    _countdownCache.clear();
-    _commentCache.clear();
-    _lastUpdateTime.clear();
-  }
-  
-  /// 特定のキーのキャッシュをクリア
-  static void clearCacheForKey(String key) {
-    _countdownCache.remove(key);
-    _commentCache.remove(key);
-    _lastUpdateTime.remove(key);
+  static void clearCache({String? specificKey}) {
+    if (specificKey != null) {
+      _countdownCache.remove(specificKey);
+      _commentCache.remove(specificKey);
+      _lastUpdateTime.remove(specificKey);
+    } else {
+      _countdownCache.clear();
+      _commentCache.clear();
+      _lastUpdateTime.clear();
+    }
   }
 
-  /// リソースをクリーンアップ
-  static void dispose() {
-    // すべてのタイマーを停止
-    for (final timer in _pollingTimers.values) {
-      timer.cancel();
-    }
-    _pollingTimers.clear();
-    
-    // すべてのStreamControllerを閉じる
+  /// すべてのストリームを閉じる
+  static void disposeAllStreams() {
     for (final controller in _countdownStreamControllers.values) {
       if (!controller.isClosed) {
         controller.close();
       }
     }
-    _countdownStreamControllers.clear();
     
     for (final controller in _commentStreamControllers.values) {
       if (!controller.isClosed) {
         controller.close();
       }
     }
-    _commentStreamControllers.clear();
     
+    _countdownStreamControllers.clear();
+    _commentStreamControllers.clear();
     clearCache();
+  }
+}
+
+/// Streamの拡張メソッド
+extension StreamExtensions<T> on Stream<T> {
+  /// 重複する値をフィルター
+  Stream<T> distinct() {
+    T? previous;
+    return where((current) {
+      if (previous == null || previous != current) {
+        previous = current;
+        return true;
+      }
+      return false;
+    });
+  }
+  
+  /// デバウンス処理
+  Stream<T> debounceTime(Duration duration) {
+    late StreamController<T> controller;
+    Timer? timer;
+    
+    controller = StreamController<T>(
+      onListen: () {
+        listen(
+          (data) {
+            timer?.cancel();
+            timer = Timer(duration, () {
+              if (!controller.isClosed) {
+                controller.add(data);
+              }
+            });
+          },
+          onError: controller.addError,
+          onDone: () {
+            timer?.cancel();
+            controller.close();
+          },
+        );
+      },
+      onCancel: () {
+        timer?.cancel();
+      },
+    );
+    
+    return controller.stream;
   }
 }

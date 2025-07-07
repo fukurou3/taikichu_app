@@ -264,6 +264,116 @@ class _CachedValue<T> {
   _CachedValue(this.value, this.timestamp);
 }
 
+  /// 【新機能】カウントダウンリストを取得
+  static Future<List<Map<String, dynamic>>> getCountdowns({
+    String? category,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    try {
+      final uri = Uri.parse('$_baseUrl/countdowns').replace(
+        queryParameters: {
+          if (category != null) 'category': category,
+          'limit': limit.toString(),
+          'offset': offset.toString(),
+        },
+      );
+
+      final response = await _httpClient
+          .get(
+            uri,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          )
+          .timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final countdowns = data['countdowns'] as List?;
+        
+        if (countdowns != null) {
+          return countdowns.cast<Map<String, dynamic>>();
+        }
+      } else {
+        print('MVPAnalyticsClient - Error getting countdowns: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('MVPAnalyticsClient - Error getting countdowns: $e');
+    }
+    
+    return [];
+  }
+
+  /// 【新機能】ユーザー状態を取得（参加・いいね）
+  static Future<Map<String, bool>> getUserState(String userId, String countdownId) async {
+    try {
+      final response = await _httpClient
+          .get(
+            Uri.parse('$_baseUrl/user-state/$userId/$countdownId'),
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          )
+          .timeout(const Duration(seconds: 3));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return {
+          'is_participating': data['is_participating'] as bool? ?? false,
+          'is_liked': data['is_liked'] as bool? ?? false,
+        };
+      } else {
+        print('MVPAnalyticsClient - Error getting user state: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('MVPAnalyticsClient - Error getting user state: $e');
+    }
+    
+    return {'is_participating': false, 'is_liked': false};
+  }
+
+  /// 【新機能】コメントリストを取得（ページネーション対応）
+  static Future<List<Map<String, dynamic>>> getComments(
+    String countdownId, {
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    try {
+      final uri = Uri.parse('$_baseUrl/comments/$countdownId').replace(
+        queryParameters: {
+          'limit': limit.toString(),
+          'offset': offset.toString(),
+        },
+      );
+
+      final response = await _httpClient
+          .get(
+            uri,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          )
+          .timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final comments = data['comments'] as List?;
+        
+        if (comments != null) {
+          return comments.cast<Map<String, dynamic>>();
+        }
+      } else {
+        print('MVPAnalyticsClient - Error getting comments: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('MVPAnalyticsClient - Error getting comments: $e');
+    }
+    
+    return [];
+  }
+}
+
 /// EnhancedCountdownCard と統合するためのヘルパー
 class MVPCountdownData {
   /// カウントダウンの全分析データを一括取得

@@ -133,7 +133,24 @@ class AnalyticsProcessor:
                     pipe.zadd(GLOBAL_RANKING_KEY, {countdown_id: new_score})
                     pipe.expire(GLOBAL_RANKING_KEY, 86400)  # 24時間有効
             
-            # 5. 活動メタデータ更新
+            # 5. ユーザー状態追跡（参加・いいね）
+            if user_id:
+                if event_type == 'participation_added':
+                    user_participation_key = f"user_participation:{user_id}:{countdown_id}"
+                    pipe.set(user_participation_key, 1)
+                    pipe.expire(user_participation_key, 86400 * 30)  # 30日間有効
+                elif event_type == 'participation_removed':
+                    user_participation_key = f"user_participation:{user_id}:{countdown_id}"
+                    pipe.delete(user_participation_key)
+                elif event_type == 'like_added':
+                    user_like_key = f"user_like:{user_id}:{countdown_id}"
+                    pipe.set(user_like_key, 1)
+                    pipe.expire(user_like_key, 86400 * 30)  # 30日間有効
+                elif event_type == 'like_removed':
+                    user_like_key = f"user_like:{user_id}:{countdown_id}"
+                    pipe.delete(user_like_key)
+            
+            # 6. 活動メタデータ更新
             metadata_key = f"activity:{countdown_id}"
             activity_data = {
                 'last_event': event_type,
@@ -147,7 +164,7 @@ class AnalyticsProcessor:
             pipe.hincrby(metadata_key, 'event_count', 1)
             pipe.expire(metadata_key, 86400 * 7)  # 7日間有効
             
-            # 6. 時間別集計（オプション）
+            # 7. 時間別集計（オプション）
             hour_key = f"hourly:{datetime.now(timezone.utc).strftime('%Y%m%d_%H')}:{event_type}"
             pipe.incr(hour_key)
             pipe.expire(hour_key, 86400 * 2)  # 48時間有効
@@ -355,6 +372,134 @@ def get_ranking():
         })
     except Exception as e:
         logger.error(f"Error getting ranking: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/countdowns', methods=['GET'])
+def get_countdowns():
+    """カウントダウンリスト取得API"""
+    try:
+        # パラメータ取得
+        category = request.args.get('category')
+        limit = int(request.args.get('limit', 50))
+        offset = int(request.args.get('offset', 0))
+        
+        # Firestore からカウントダウンを取得
+        # 注意: この実装は移行期間中の一時的なもの
+        # 将来的にはRedisキャッシュまたは別のデータストアを使用
+        from google.cloud import firestore
+        db = firestore.Client()
+        
+        query = db.collection('counts')
+        
+        if category:
+            query = query.where('category', '==', category)
+            
+        query = query.order_by('eventDate', direction=firestore.Query.DESCENDING)
+        query = query.limit(limit).offset(offset)
+        
+        docs = query.stream()
+        
+        countdowns = []
+        for doc in docs:
+            data = doc.to_dict()
+            countdown_data = {
+                'id': doc.id,
+                'eventName': data.get('eventName', ''),
+                'description': data.get('description'),
+                'eventDate': data.get('eventDate').isoformat() if data.get('eventDate') else None,
+                'category': data.get('category', 'その他'),
+                'imageUrl': data.get('imageUrl'),
+                'creatorId': data.get('creatorId'),
+                # カウンターはRedisから取得
+                'participantsCount': processor.get_counter_value(doc.id, 'participants'),
+                'likesCount': processor.get_counter_value(doc.id, 'likes'),
+                'commentsCount': processor.get_counter_value(doc.id, 'comments'),
+                'viewsCount': processor.get_counter_value(doc.id, 'views'),
+                'trendScore': processor.get_trend_score(doc.id),
+            }
+            countdowns.append(countdown_data)
+        
+        return jsonify({
+            'countdowns': countdowns,
+            'category': category,
+            'limit': limit,
+            'offset': offset,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting countdowns: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/user-state/<user_id>/<countdown_id>', methods=['GET'])
+def get_user_state(user_id: str, countdown_id: str):
+    """ユーザーの参加・いいね状態取得API"""
+    try:
+        # Redis から状態を取得
+        participation_key = f"user_participation:{user_id}:{countdown_id}"
+        like_key = f"user_like:{user_id}:{countdown_id}"
+        
+        is_participating = bool(processor.redis.get(participation_key))
+        is_liked = bool(processor.redis.get(like_key))
+        
+        return jsonify({
+            'user_id': user_id,
+            'countdown_id': countdown_id,
+            'is_participating': is_participating,
+            'is_liked': is_liked,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting user state: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/comments/<countdown_id>', methods=['GET'])
+def get_comments(countdown_id: str):
+    """コメントリスト取得API（ページネーション対応）"""
+    try:
+        limit = int(request.args.get('limit', 20))
+        offset = int(request.args.get('offset', 0))
+        
+        # Firestore からコメントを取得
+        from google.cloud import firestore
+        db = firestore.Client()
+        
+        query = db.collection('comments')
+        query = query.where('countdownId', '==', countdown_id)
+        query = query.order_by('createdAt', direction=firestore.Query.DESCENDING)
+        query = query.limit(limit).offset(offset)
+        
+        docs = query.stream()
+        
+        comments = []
+        for doc in docs:
+            data = doc.to_dict()
+            comment_data = {
+                'id': doc.id,
+                'countdownId': data.get('countdownId'),
+                'content': data.get('content'),
+                'userId': data.get('userId'),
+                'userName': data.get('userName'),
+                'userAvatarUrl': data.get('userAvatarUrl'),
+                'createdAt': data.get('createdAt').isoformat() if data.get('createdAt') else None,
+                'likesCount': data.get('likesCount', 0),
+            }
+            comments.append(comment_data)
+        
+        return jsonify({
+            'comments': comments,
+            'countdown_id': countdown_id,
+            'limit': limit,
+            'offset': offset,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting comments: {e}")
         return jsonify({'error': str(e)}), 500
 
 

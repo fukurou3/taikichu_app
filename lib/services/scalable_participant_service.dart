@@ -43,17 +43,17 @@ class ScalableParticipantService {
     }
   }
 
-  /// 参加状態の確認
+  /// 【移行完了】参加状態の確認（バックエンドAPI経由）
+  /// 
+  /// 🚀 Redis から高速取得（1-5ms）
+  /// 💰 Firestore読み取りコストを完全削除
   static Future<bool> isParticipating(String countdownId) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return false;
 
     try {
-      final doc = await _firestore
-          .collection('participants')
-          .doc('${countdownId}_${user.uid}')
-          .get();
-      return doc.exists;
+      final userState = await MVPAnalyticsClient.getUserState(user.uid, countdownId);
+      return userState['is_participating'] ?? false;
     } catch (e) {
       print('ScalableParticipantService - Error checking participation: $e');
       return false;
