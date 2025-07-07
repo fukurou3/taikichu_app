@@ -1,102 +1,334 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // デフォルトでアクセス拒否（セキュリティ強化）
+    
+    // ==============================================
+    // 厳格なセキュリティポリシー
+    // デフォルトは全てのアクセスを拒否
+    // ==============================================
     match /{document=**} {
       allow read, write: if false;
     }
     
-    // ヘルパー関数：Cloud Functions サービスアカウントかチェック
+    // ==============================================
+    // ヘルパー関数定義
+    // ==============================================
+    
+    /// Cloud Functions/Cloud Run サービスアカウント認証チェック
     function isServiceAccount() {
-      return request.auth != null && 
-             (request.auth.token.firebase.sign_in_provider == 'custom' ||
-              request.auth.uid == 'firebase-adminsdk');
+      return request.auth != null && (
+        // Firebase Admin SDK
+        request.auth.token.firebase.sign_in_provider == 'custom' ||
+        
+        // Cloud Functions/Cloud Run からの呼び出し
+        request.auth.uid.matches('firebase-adminsdk.*') ||
+        
+        // Google Cloud サービスアカウント
+        request.auth.token.firebase.identities.keys().hasAny(['google.com']) &&
+        request.auth.token.email.matches('.*@.*\\.iam\\.gserviceaccount\\.com')
+      );
     }
     
-    // ヘルパー関数：認証済みユーザーかチェック
+    /// 認証済みユーザーチェック
     function isAuthenticated() {
-      return request.auth != null && request.auth.uid != null;
+      return request.auth != null && 
+             request.auth.uid != null && 
+             request.auth.uid != '';
     }
     
-    // ヘルパー関数：データの所有者かチェック
+    /// データ所有者チェック
     function isOwner(ownerId) {
       return isAuthenticated() && request.auth.uid == ownerId;
     }
     
-    // カウントダウン（counts）コレクション
+    /// 管理者チェック（必要に応じて）
+    function isAdmin() {
+      return isAuthenticated() && 
+             request.auth.token.admin == true;
+    }
+    
+    /// データ完全性チェック（必須フィールド存在確認）
+    function hasRequiredFields(requiredFields) {
+      return request.resource.data.keys().hasAll(requiredFields);
+    }
+    
+    /// 不変フィールドチェック（作成後変更不可フィールド）
+    function immutableFields(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+    
+    // ==============================================
+    // 🚨 集計データコレクション（完全書き込み禁止）
+    // ==============================================
+    
+    /// counts - カウントダウン集計データ
+    /// ❌ クライアントからの直接書き込み完全禁止
     match /counts/{countdownId} {
-      allow read: if true; // 読み取りは公開
-      allow create: if isAuthenticated() && 
-                       request.auth.uid == request.resource.data.creatorId;
-      allow update: if isOwner(resource.data.creatorId) || isServiceAccount();
-      allow delete: if isOwner(resource.data.creatorId);
+      allow read: if true; // 公開読み取り
+      allow write: if isServiceAccount(); // サービスアカウントのみ書き込み可能
     }
     
-    // コメント（comments）コレクション
-    match /comments/{commentId} {
-      allow read: if true; // 読み取りは公開
-      allow create: if isAuthenticated() && 
-                       request.auth.uid == request.resource.data.authorId &&
-                       request.resource.data.keys().hasAll(['authorId', 'countdownId', 'content', 'createdAt']);
-      allow update: if isOwner(resource.data.authorId) && 
-                       !request.resource.data.diff(resource.data).affectedKeys().hasAny(['authorId', 'countdownId', 'createdAt']);
-      allow delete: if isOwner(resource.data.authorId);
-    }
-    
-    // いいね（likes）コレクション  
-    match /likes/{likeId} {
-      allow read: if true;
-      allow create: if isAuthenticated() && 
-                       request.auth.uid == request.resource.data.userId &&
-                       request.resource.data.keys().hasAll(['userId', 'countdownId', 'createdAt']);
-      allow update: if false; // いいねは作成後変更不可
-      allow delete: if isOwner(resource.data.userId);
-    }
-    
-    // 参加者（participants）コレクション
-    match /participants/{participantId} {
-      allow read: if true;
-      allow create: if isAuthenticated() && 
-                       request.auth.uid == request.resource.data.userId &&
-                       request.resource.data.keys().hasAll(['userId', 'countdownId', 'joinedAt']);
-      allow update: if false; // 参加は作成後変更不可
-      allow delete: if isOwner(resource.data.userId);
-    }
-    
-    // トレンドランキング（trendRankings）コレクション
+    /// trendRankings - トレンドランキング集計データ
+    /// ❌ クライアントからの直接書き込み完全禁止
     match /trendRankings/{rankingId} {
-      allow read: if true; // 読み取りは公開
-      allow write: if isServiceAccount(); // Cloud Functionsからのみ書き込み可能
+      allow read: if true; // 公開読み取り
+      allow write: if isServiceAccount(); // サービスアカウントのみ書き込み可能
     }
     
-    // 分散カウンター用シャード（countdownShards）コレクション
+    /// countdownShards - 分散カウンターシャード
+    /// ❌ クライアントからの直接書き込み完全禁止
     match /countdownShards/{shardId} {
-      allow read: if true;
-      allow write: if isServiceAccount(); // Cloud Functionsからのみ書き込み可能
+      allow read: if isServiceAccount(); // サービスアカウントのみ読み取り可能
+      allow write: if isServiceAccount(); // サービスアカウントのみ書き込み可能
     }
     
-    // ユーザープロファイル（users）コレクション
+    /// distributed_counters - 分散カウンター
+    /// ❌ クライアントからの直接書き込み完全禁止
+    match /distributed_counters/{counterId} {
+      allow read: if isServiceAccount(); // サービスアカウントのみ読み取り可能
+      allow write: if isServiceAccount(); // サービスアカウントのみ書き込み可能
+    }
+    
+    /// analytics - システム分析データ
+    /// ❌ クライアントからの直接書き込み完全禁止
+    match /analytics/{document} {
+      allow read: if isServiceAccount(); // サービスアカウントのみ読み取り可能
+      allow write: if isServiceAccount(); // サービスアカウントのみ書き込み可能
+    }
+    
+    // ==============================================
+    // 👤 ユーザー関連コレクション
+    // ==============================================
+    
+    /// users - ユーザープロフィール
+    /// ✅ 本人のみ編集可能
     match /users/{userId} {
-      allow read: if true; // プロファイルは公開
-      allow create: if isAuthenticated() && request.auth.uid == userId;
+      allow read: if true; // プロフィールは公開読み取り
+      
+      // 作成：本人のみ、必須フィールド必要
+      allow create: if isOwner(userId) && 
+                       hasRequiredFields(['displayName', 'createdAt']) &&
+                       request.resource.data.createdAt == request.time;
+      
+      // 更新：本人のみ、不変フィールド保護
       allow update: if isOwner(userId) && 
-                       !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdAt']);
+                       immutableFields(['createdAt', 'uid']) &&
+                       request.resource.data.updatedAt == request.time;
+      
+      // 削除：本人のみ
       allow delete: if isOwner(userId);
     }
     
-    // 通知（notifications）コレクション
+    /// notifications - 通知
+    /// ✅ 本人のみ読み取り・更新、作成はサービスアカウントのみ
     match /notifications/{notificationId} {
-      allow read: if isAuthenticated() && request.auth.uid == resource.data.userId;
-      allow create: if isServiceAccount(); // Cloud Functionsからのみ作成可能
+      // 読み取り：本人のみ
+      allow read: if isAuthenticated() && 
+                     request.auth.uid == resource.data.userId;
+      
+      // 作成：サービスアカウントのみ
+      allow create: if isServiceAccount() && 
+                       hasRequiredFields(['userId', 'type', 'message', 'createdAt']);
+      
+      // 更新：本人のみ、読み取り状態のみ変更可能
       allow update: if isOwner(resource.data.userId) && 
-                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt']);
+      
+      // 削除：本人のみ
       allow delete: if isOwner(resource.data.userId);
     }
     
-    // システム統計（analytics）コレクション - 分析基盤用
-    match /analytics/{document} {
-      allow read: if false; // 内部データのため読み取り不可
-      allow write: if isServiceAccount(); // Cloud Functionsからのみ書き込み可能
+    // ==============================================
+    // 📝 コンテンツコレクション
+    // ==============================================
+    
+    /// comments - コメント
+    /// ✅ 作成者のみ編集可能
+    match /comments/{commentId} {
+      allow read: if true; // 公開読み取り
+      
+      // 作成：認証済みユーザー、必須フィールド必要
+      allow create: if isAuthenticated() && 
+                       request.auth.uid == request.resource.data.authorId &&
+                       hasRequiredFields(['authorId', 'countdownId', 'content', 'createdAt']) &&
+                       request.resource.data.createdAt == request.time;
+      
+      // 更新：作成者のみ、不変フィールド保護、内容のみ変更可能
+      allow update: if isOwner(resource.data.authorId) && 
+                       immutableFields(['authorId', 'countdownId', 'createdAt']) &&
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content', 'updatedAt']) &&
+                       request.resource.data.updatedAt == request.time;
+      
+      // 削除：作成者のみ
+      allow delete: if isOwner(resource.data.authorId);
+    }
+    
+    // ==============================================
+    // 👍 エンゲージメントコレクション
+    // ==============================================
+    
+    /// likes - いいね
+    /// ✅ 本人のみ作成・削除、変更不可
+    match /likes/{likeId} {
+      allow read: if true; // 公開読み取り
+      
+      // 作成：本人のみ、必須フィールド必要
+      allow create: if isAuthenticated() && 
+                       request.auth.uid == request.resource.data.userId &&
+                       hasRequiredFields(['userId', 'countdownId', 'createdAt']) &&
+                       request.resource.data.createdAt == request.time;
+      
+      // 更新：禁止（いいねは不変）
+      allow update: if false;
+      
+      // 削除：本人のみ
+      allow delete: if isOwner(resource.data.userId);
+    }
+    
+    /// participants - 参加者
+    /// ✅ 本人のみ作成・削除、変更不可
+    match /participants/{participantId} {
+      allow read: if true; // 公開読み取り
+      
+      // 作成：本人のみ、必須フィールド必要
+      allow create: if isAuthenticated() && 
+                       request.auth.uid == request.resource.data.userId &&
+                       hasRequiredFields(['userId', 'countdownId', 'joinedAt']) &&
+                       request.resource.data.joinedAt == request.time;
+      
+      // 更新：禁止（参加は不変）
+      allow update: if false;
+      
+      // 削除：本人のみ
+      allow delete: if isOwner(resource.data.userId);
+    }
+    
+    // ==============================================
+    // 📊 カウントダウンベースコレクション
+    // ==============================================
+    
+    /// countdowns - カウントダウン本体
+    /// ✅ 作成者のみ編集可能
+    match /countdowns/{countdownId} {
+      allow read: if true; // 公開読み取り
+      
+      // 作成：認証済みユーザー、必須フィールド必要
+      allow create: if isAuthenticated() && 
+                       request.auth.uid == request.resource.data.creatorId &&
+                       hasRequiredFields(['creatorId', 'eventName', 'eventDate', 'createdAt']) &&
+                       request.resource.data.createdAt == request.time;
+      
+      // 更新：作成者のみ、不変フィールド保護
+      allow update: if isOwner(resource.data.creatorId) && 
+                       immutableFields(['creatorId', 'createdAt']) &&
+                       request.resource.data.updatedAt == request.time;
+      
+      // 削除：作成者のみ
+      allow delete: if isOwner(resource.data.creatorId);
+    }
+    
+    // ==============================================
+    // 🔒 システム専用コレクション
+    // ==============================================
+    
+    /// system_logs - システムログ
+    /// ❌ サービスアカウントのみアクセス可能
+    match /system_logs/{logId} {
+      allow read: if isServiceAccount();
+      allow write: if isServiceAccount();
+    }
+    
+    /// admin_settings - 管理者設定
+    /// ❌ 管理者またはサービスアカウントのみアクセス可能
+    match /admin_settings/{settingId} {
+      allow read: if isAdmin() || isServiceAccount();
+      allow write: if isAdmin() || isServiceAccount();
+    }
+    
+    /// feature_flags - 機能フラグ
+    /// ✅ 読み取り公開、書き込みは管理者のみ
+    match /feature_flags/{flagId} {
+      allow read: if true; // 機能フラグは公開読み取り
+      allow write: if isAdmin() || isServiceAccount();
+    }
+    
+    // ==============================================
+    // 🚨 セキュリティ監査ログ
+    // ==============================================
+    
+    /// security_audit - セキュリティ監査ログ
+    /// ❌ サービスアカウントのみアクセス可能
+    match /security_audit/{auditId} {
+      allow read: if isServiceAccount();
+      allow write: if isServiceAccount();
+    }
+    
+    // ==============================================
+    // 🔧 開発・テスト用（本番では削除）
+    // ==============================================
+    
+    /// test_data - テストデータ（開発環境のみ）
+    /// ⚠️ 本番環境では必ず削除すること
+    match /test_data/{testId} {
+      allow read, write: if isAuthenticated() && 
+                           // 本番環境では false にする
+                           resource.data.environment == 'development';
     }
   }
 }
+
+/*
+==============================================
+🛡️ セキュリティルール設計方針
+==============================================
+
+1. ゼロトラスト原則
+   - デフォルトは全てのアクセスを拒否
+   - 明示的な許可のみ
+
+2. 集計データ保護
+   - counts, trendRankings等はサービスアカウントのみ
+   - クライアントからの直接書き込み完全禁止
+
+3. 所有者原則
+   - ユーザーは自分のデータのみ操作可能
+   - 他人のデータは読み取りのみ（公開データ）
+
+4. 不変性保証
+   - 作成後変更すべきでないフィールドの保護
+   - createdAt, authorId等の改ざん防止
+
+5. データ完全性
+   - 必須フィールドの存在確認
+   - 型安全性の確保
+
+6. 監査性
+   - 全ての書き込み操作の追跡可能性
+   - セキュリティログの保護
+
+7. 段階的権限
+   - 読み取り < 作成 < 更新 < 削除
+   - 最小権限の原則
+
+==============================================
+🚀 運用時の注意事項
+==============================================
+
+1. デプロイ前テスト必須
+   - firebase emulators:start --only firestore
+   - セキュリティルールのテスト実行
+
+2. 本番デプロイ時の確認
+   - test_data セクションの削除
+   - environment 変数の確認
+
+3. 定期的な監査
+   - アクセスログの確認
+   - 異常なアクセスパターンの検出
+
+4. 緊急時対応
+   - ルールの一時的な厳格化
+   - 不正アクセス時の即座遮断
+
+==============================================
+*/

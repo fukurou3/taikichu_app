@@ -2,18 +2,14 @@
 全体目標: 現在のFirestore中心のアーキテクチャから、大規模トラフィックに耐えうるリアルタイム分析基盤へ完全移行する。これにより、圧倒的なパフォーマンス向上と90%以上のコスト削減を両立させ、100万人規模のユーザーが快適に利用できるサービス基盤を構築する。
 
 Phase 0：インフラ構築とセキュリティ硬化（最優先・即時着手）
-•	Task 0-1: GCP課金設定とAPI有効化
-o	Google Cloud Platformにて課金情報を有効化する。
-o	gcloud services enable pubsub.googleapis.com run.googleapis.com redis.googleapis.com を実行し、必要なAPIを有効化する。
-•	Task 0-2: Redisインスタンス管理の自動化
-o	テスト用のRedisインスタンスをワンコマンドで作成・削除するスクリプトを整備し、不要なコストを完全にゼロにする運用を確立する。
-•	Task 0-3: Firestoreセキュリティルールの厳格化
+•	Task 0-1: Memorystore for Redisを使ったテストができるように課金設定を済ませる。。
+•	Task 0-2: Firestoreセキュリティルールの厳格化
 o	firestore.rules を全面的に書き換える。
 o	countsのような集計データコレクションへのクライアントからの直接書き込みを完全に禁止 (allow write: if false;) する。
 o	ユーザープロフィールなど、特定のドキュメントは本人のみ編集可能にするルールを記述する。
 o	書き込みはCloud FunctionsやCloud Runのサービスアカウント経由のみを許可する。
-•	Task 0-4: 統一パイプラインのローカル開発環境構築
-o	Docker Composeを利用し、開発者全員がPub/Sub, Cloud Run, Redisをローカルで再現できる環境を構築する。これにより、移行作業の開発効率と安全性を担保する。
+•	Task 0-3: 統一パイプラインのローカル開発環境構築
+o	Docker Composeを利用し、Pub/Sub, Cloud Run, Redisをローカルで再現できる環境を構築する。これにより、移行作業の開発効率と安全性を担保する。
 
 Phase 1：イベント駆動への完全移行（書き込み経路の統一）
 •	Task 1-1: クライアントからのイベント発行への統一

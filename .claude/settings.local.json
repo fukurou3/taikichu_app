@@ -18,7 +18,8 @@
       "Bash(/mnt/c/Users/fukur/flutter/bin/flutter analyze)",
       "Bash(gcloud scheduler jobs list:*)",
       "Bash(rm:*)",
-      "Bash(mv:*)"
+      "Bash(mv:*)",
+      "Bash(firebase login:*)"
     ],
     "deny": []
   }
