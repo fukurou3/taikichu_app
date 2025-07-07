@@ -1,0 +1,58 @@
+作業方針書：『待機中。』アプリ スケーラブルアーキテクチャ移行計画（改訂版）
+全体目標: 現在のFirestore中心のアーキテクチャから、大規模トラフィックに耐えうるリアルタイム分析基盤へ完全移行する。これにより、圧倒的なパフォーマンス向上と90%以上のコスト削減を両立させ、100万人規模のユーザーが快適に利用できるサービス基盤を構築する。
+
+Phase 0：インフラ構築とセキュリティ硬化（最優先・即時着手）
+•	Task 0-1: GCP課金設定とAPI有効化
+o	Google Cloud Platformにて課金情報を有効化する。
+o	gcloud services enable pubsub.googleapis.com run.googleapis.com redis.googleapis.com を実行し、必要なAPIを有効化する。
+•	Task 0-2: Redisインスタンス管理の自動化
+o	テスト用のRedisインスタンスをワンコマンドで作成・削除するスクリプトを整備し、不要なコストを完全にゼロにする運用を確立する。
+•	Task 0-3: Firestoreセキュリティルールの厳格化
+o	firestore.rules を全面的に書き換える。
+o	countsのような集計データコレクションへのクライアントからの直接書き込みを完全に禁止 (allow write: if false;) する。
+o	ユーザープロフィールなど、特定のドキュメントは本人のみ編集可能にするルールを記述する。
+o	書き込みはCloud FunctionsやCloud Runのサービスアカウント経由のみを許可する。
+•	Task 0-4: 統一パイプラインのローカル開発環境構築
+o	Docker Composeを利用し、開発者全員がPub/Sub, Cloud Run, Redisをローカルで再現できる環境を構築する。これにより、移行作業の開発効率と安全性を担保する。
+
+Phase 1：イベント駆動への完全移行（書き込み経路の統一）
+•	Task 1-1: クライアントからのイベント発行への統一
+o	Flutterアプリ内の全アクション（いいね、参加、コメント、閲覧）をUnifiedAnalyticsService を経由してイベント発行するよう修正する。
+o	scalable_like_service.dart, scalable_participant_service.dart 等のFirestoreを直接更新するロジックを全て削除し、イベント発行に置き換える。
+•	Task 1-2: Pub/Subイベント発行バックエンドの構築
+o	functions/mvp_analytics_functions.js をベースに、FirestoreトリガーでPub/Subにイベントを発行するCloud Functionsをデプロイする。
+o	このFunctionが唯一のイベント発行源であることを保証する。
+•	Task 1-3: リアルタイム分析サービスのデプロイ
+o	analytics-service/main.py をCloud Runにデプロイする。
+o	Pub/Subトピック (analytics-events) からのPushサブスクリプションを設定し、Cloud Runサービスがイベントを受信できるようにする。
+
+Phase 2：旧システムの完全撤廃（読み込み経路の統一と負債の返済）
+•	Task 2-1: 1回限りのデータ移行
+o	既存のcountsコレクションやdistributed_countersシャードの値を集計し、Redisに初期データを投入する1回限りの移行スクリプトを作成・実行する。
+•	Task 2-2: クライアントの参照先変更
+o	Flutterアプリがトレンドスコア、カウンター、ランキング等の情報を取得する際、mvp_analytics_client.dart を経由してCloud Run APIからのみ取得するように全面的に書き換える。
+o	simple_home_screen.dart など、古いServiceを参照しているUIは全て新しいClient経由に修正、または削除する。
+•	Task 2-3: 技術的負債の完全削除
+o	参照されなくなった以下のレガシーサービスをプロジェクトから物理的に削除する。
+	cost_safe_counter_service.dart
+	distributed_counter_service.dart
+	trend_ranking_service.dart
+	scalable_trend_service.dart
+o	cloud_functions_cost_safe.js と、カウンターを直接更新する古いCloud Functions (functions/src/index.ts) を削除する。
+
+Phase 3：信頼性とパフォーマンスの向上
+•	Task 3-1: 包括的テスト体制の構築
+o	services層の各ロジックに対する単体テストを整備する。
+o	「クライアント → Pub/Sub → Cloud Run → Redis」のエンドツーエンドのフローを検証する統合テストを構築し、デプロイ前の必須要件とする。
+•	Task 3-2: 監視・エラー報告体制の構築
+o	FlutterアプリにFirebase Crashlyticsを導入し、クラッシュレポートを自動収集する。
+o	Cloud Run, Cloud Functionsで発生したエラーをGoogle Cloud Error Reportingに集約し、重大なエラーは開発チームに通知されるアラートを設定する。
+•	Task 3-3: クライアントパフォーマンスの最適化
+o	optimized_stream_service.dart のdebounce処理などを活用し、UIの過剰な再描画を抑制する。
+o	取得したデータをローカルでキャッシュし、まずキャッシュから表示して体感速度を向上させる戦略をアプリ全体に適用する。
+
+Phase 4：開発プロセスの自動化
+•	Task 4-1: CI/CDパイプラインの導入
+o	GitHub Actionsを利用し、ソースコードのプッシュをトリガーに自動でテストを実行するCI（継続的インテグレーション）を構築する。
+o	テストが成功したコードを、ワンクリックまたは自動でFirebaseやCloud RunにデプロイするCD（継続的デリバリー）を構築する。これにより、手作業によるミスを撲滅し、リリースサイクルを高速化する。
+
