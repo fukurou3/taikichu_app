@@ -49,7 +49,7 @@ make health                   # Unix/Linux/Mac
 ./scripts/health-check.sh     # 詳細版
 ```
 
-### 3. 統一パイプライン確認
+### 5. 統一パイプライン確認
 ```bash
 # システム健康状態チェック
 curl http://localhost:80/health
@@ -61,7 +61,7 @@ curl http://localhost:8080/health
 docker exec taikichu-redis-local redis-cli ping
 ```
 
-### 4. Flutter開発
+### 6. Flutter開発
 ```bash
 # エミュレーター向け設定でFlutter起動
 flutter run --dart-define=ENVIRONMENT=development
@@ -212,7 +212,7 @@ flutter test integration_test/unified_pipeline_test.dart
 
 問題発生時:
 1. `docker-compose logs` でエラー確認
-2. `README_ARCHITECTURE.md` で仕様確認
+2. `docs/architecture.md` で仕様確認
 3. GitHub Issues に詳細投稿
 
 ---

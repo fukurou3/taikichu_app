@@ -85,7 +85,7 @@ taikichu_app/
 
 3. **分析基盤構築**
    ```bash
-   # 詳細は SETUP_MANUAL.md を参照
+   # 詳細は docs/setup.md を参照
    ```
 
 ## 📊 統一パイプライン
@@ -139,9 +139,11 @@ flutter build apk --release
 
 ## 📖 ドキュメント
 
-- [`SETUP_MANUAL.md`](./SETUP_MANUAL.md) - 分析基盤セットアップ手順
-- [`最新の仕組み_解説書.md`](./最新の仕組み_解説書.md) - 新人向け技術解説
-- [`README_ARCHITECTURE.md`](./README_ARCHITECTURE.md) - 詳細アーキテクチャ設計
+- [`docs/setup.md`](./setup.md) - 分析基盤セットアップ手順
+- [`docs/architecture.md`](./architecture.md) - 詳細アーキテクチャ設計
+- [`docs/local-development.md`](./local-development.md) - ローカル開発環境
+- [`docs/commands.md`](./commands.md) - 開発者向けコマンド集
+- [`docs/migration.md`](./migration.md) - データ移行ガイド
 
 ## 🤝 コントリビューション
 

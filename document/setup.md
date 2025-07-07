@@ -1,9 +1,10 @@
 # 🛠️ 統一パイプライン分析基盤 セットアップ完了レポート
 
-## ✅ セットアップ完了状況（2025年7月7日）
+## ✅ セットアップ完了状況（2025 年 7 月 7 日）
 
 ### 📋 プロジェクト情報
-- **プロジェクトID**: `taikichu-app-c8dcd`
+
+- **プロジェクト ID**: `taikichu-app-c8dcd`
 - **プロジェクト番号**: `903887414845`
 - **リージョン**: `asia-northeast1`
 - **ステータス**: 🎉 **本番運用中**
@@ -13,13 +14,15 @@
 ## 🎯 構築完了した統一パイプライン
 
 ### アーキテクチャ
+
 ```
 Flutter App → Firebase Functions → Pub/Sub → Cloud Run → Redis
     ↓              ↓                 ↓        ↓         ↓
-ユーザー操作    イベント発行      非同期配信  統一処理   高速応答
+ ユーザー操作    イベント発行      非同期配信  統一処理   高速応答
 ```
 
 ### 🚀 パフォーマンス実績
+
 - **レスポンス時間**: 1-5ms（目標：<10ms）
 - **コスト削減**: 98%（$50,000 → $500/月）
 - **可用性**: 99.95%
@@ -31,7 +34,8 @@ Flutter App → Firebase Functions → Pub/Sub → Cloud Run → Redis
 
 ### ✅ 1. Google Cloud インフラ
 
-#### API有効化済み
+#### API 有効化済み
+
 - [x] `pubsub.googleapis.com` - Pub/Sub メッセージング
 - [x] `run.googleapis.com` - Cloud Run サーバーレス
 - [x] `redis.googleapis.com` - Redis キャッシュ
@@ -41,6 +45,7 @@ Flutter App → Firebase Functions → Pub/Sub → Cloud Run → Redis
 - [x] `logging.googleapis.com` - ログ収集
 
 #### Pub/Sub 設定済み
+
 ```bash
 Topic: analytics-events
 Subscription: analytics-processor
@@ -48,6 +53,7 @@ Push Endpoint: https://analytics-service-694414843228.asia-northeast1.run.app/pr
 ```
 
 #### Redis インスタンス稼働中
+
 ```bash
 Instance Name: taikichu-analytics-redis
 Region: asia-northeast1
@@ -57,6 +63,7 @@ Status: READY
 ```
 
 #### VPC コネクタ構築済み
+
 ```bash
 Connector: redis-connector
 Region: asia-northeast1
@@ -67,6 +74,7 @@ Status: READY
 ### ✅ 2. Cloud Run Analytics Service
 
 #### デプロイ完了
+
 ```bash
 Service: analytics-service
 URL: https://analytics-service-694414843228.asia-northeast1.run.app
@@ -75,6 +83,7 @@ Status: 100% traffic serving
 ```
 
 #### API エンドポイント
+
 - `/process-events` - Pub/Sub イベント処理
 - `/events` - 直接イベント送信（高速パス）
 - `/trend-score/{id}` - トレンドスコア取得
@@ -85,6 +94,7 @@ Status: 100% traffic serving
 ### ✅ 3. Firebase Functions
 
 #### デプロイ済み関数
+
 - [x] `onLikeCreate` - いいね作成イベント
 - [x] `onLikeDelete` - いいね削除イベント
 - [x] `onParticipationCreate` - 参加作成イベント
@@ -94,6 +104,7 @@ Status: 100% traffic serving
 - [x] `getPubSubHealth` - ヘルスチェック
 
 #### 🚨 削除済み危険関数
+
 - [x] ~~`onCommentCreate`~~ - 重複処理削除
 - [x] ~~`onCommentDelete`~~ - 重複処理削除
 - [x] ~~`onLikeCreate`~~ - 重複処理削除
@@ -106,12 +117,14 @@ Status: 100% traffic serving
 ### ✅ 4. Flutter Client
 
 #### 新サービス実装済み
+
 - [x] `UnifiedAnalyticsService` - 統一分析クライアント
 - [x] `MVPAnalyticsClient` - 高速データ取得
 - [x] デュアルパス設計（直接 + フォールバック）
 - [x] エラーハンドリング完備
 
 #### 依存関係追加済み
+
 ```yaml
 dependencies:
   http: ^1.1.0
@@ -121,6 +134,7 @@ dependencies:
 ### ✅ 5. セキュリティ強化
 
 #### Firestore セキュリティルール更新済み
+
 - [x] デフォルトアクセス拒否
 - [x] 所有者のみデータ変更可能
 - [x] Cloud Functions サービスアカウント制限
@@ -151,7 +165,7 @@ print('Likes: ${stats['likesCount']}');
 // Redis キャッシュから超高速取得（1-5ms）
 final trendScore = await MVPAnalyticsClient.getTrendScore(countdownId);
 final likesCount = await MVPAnalyticsClient.getCounterValue(
-  countdownId: countdownId, 
+  countdownId: countdownId,
   counterType: 'likes'
 );
 ```
@@ -175,6 +189,7 @@ gcloud redis instances list --region=asia-northeast1
 ## 📊 監視・運用
 
 ### ログ確認
+
 ```bash
 # Cloud Run ログ
 gcloud logging read "resource.type=cloud_run_revision" --limit=50
@@ -187,12 +202,14 @@ gcloud logging read "severity>=ERROR" --limit=20
 ```
 
 ### パフォーマンス監視
+
 - **Cloud Monitoring**: 自動メトリクス収集
 - **レスポンス時間**: P95 < 10ms
 - **エラー率**: < 1%
 - **可用性**: > 99.9%
 
 ### コスト監視
+
 - **予算アラート**: 月額 $1,000 超過時
 - **日次コストレポート**: Cloud Billing
 - **リソース使用量**: Cloud Monitoring Dashboard
@@ -201,17 +218,20 @@ gcloud logging read "severity>=ERROR" --limit=20
 
 ## 🚀 今後の拡張
 
-### 短期（1-3ヶ月）
+### 短期（1-3 ヶ月）
+
 - [ ] A/B テスト機能統合
 - [ ] リアルタイム通知システム
 - [ ] 詳細分析ダッシュボード
 
-### 中期（3-6ヶ月）
+### 中期（3-6 ヶ月）
+
 - [ ] 機械学習による推薦システム
 - [ ] 多地域展開（Global Load Balancer）
 - [ ] エッジキャッシュ（Cloud CDN）
 
-### 長期（6-12ヶ月）
+### 長期（6-12 ヶ月）
+
 - [ ] ストリーミング分析（Dataflow）
 - [ ] 予測分析（BigQuery ML）
 - [ ] リアルタイムパーソナライゼーション
@@ -223,6 +243,7 @@ gcloud logging read "severity>=ERROR" --limit=20
 ### よくある問題
 
 #### 1. Cloud Run が 503 エラー
+
 ```bash
 # サービス状態確認
 gcloud run services describe analytics-service --region=asia-northeast1
@@ -232,6 +253,7 @@ gcloud logging read "resource.type=cloud_run_revision" --limit=10
 ```
 
 #### 2. Redis 接続エラー
+
 ```bash
 # Redis インスタンス状態確認
 gcloud redis instances describe taikichu-analytics-redis --region=asia-northeast1
@@ -241,6 +263,7 @@ gcloud compute networks vpc-access connectors list --region=asia-northeast1
 ```
 
 #### 3. Pub/Sub メッセージ未配信
+
 ```bash
 # サブスクリプション状態確認
 gcloud pubsub subscriptions describe analytics-processor
@@ -249,23 +272,19 @@ gcloud pubsub subscriptions describe analytics-processor
 gcloud pubsub subscriptions seek analytics-processor --time=$(date -d '1 hour ago' --iso-8601)
 ```
 
-### 緊急時連絡先
-- **システム障害**: 開発チーム Slack #emergency
-- **セキュリティ問題**: security@example.com
-- **コスト異常**: billing@example.com
-
 ---
 
 ## 📖 関連ドキュメント
 
-- [`README.md`](./README.md) - プロジェクト概要
-- [`ARCHITECTURE_GUIDE.md`](./ARCHITECTURE_GUIDE.md) - 包括的技術解説
-- [`README_ARCHITECTURE.md`](./README_ARCHITECTURE.md) - アーキテクチャ詳細
+- [`docs/README.md`](./README.md) - プロジェクト概要
+- [`docs/architecture.md`](./architecture.md) - 包括的技術解説
+- [`docs/local-development.md`](./local-development.md) - ローカル開発環境
+- [`docs/commands.md`](./commands.md) - 開発者向けコマンド集
 
 ---
 
-**最終更新**: 2025年7月7日  
-**セットアップ完了**: 2025年7月7日  
+**最終更新**: 2025 年 7 月 7 日  
+**セットアップ完了**: 2025 年 7 月 7 日  
 **担当者**: 開発チーム  
 **ステータス**: 🎉 **本番運用中**
 

@@ -241,7 +241,7 @@ flutter pub get
 firebase login
 firebase use taikichu-app-c8dcd
 
-# 3. 分析基盤構築（詳細はSETUP_MANUAL.md）
+# 3. 分析基盤構築（詳細はsetup.md）
 ```
 
 ### デプロイ手順
