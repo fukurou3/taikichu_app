@@ -16,16 +16,46 @@ import os
 import time
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional
+from functools import wraps
 
 import redis
 from flask import Flask, request, jsonify
 from google.cloud import logging as cloud_logging
+from google.cloud import error_reporting
+from google.cloud import firestore
+from firebase_admin import credentials, initialize_app, auth
+
+# Firebase Admin SDK初期化
+try:
+    initialize_app()
+except ValueError:
+    # 既に初期化済みの場合は無視
+    pass
 
 # Cloud Logging設定
 cloud_logging.Client().setup_logging()
 logger = logging.getLogger(__name__)
 
+# Error Reporting クライアント初期化
+error_client = error_reporting.Client()
+
 app = Flask(__name__)
+
+# グローバルエラーハンドラー
+@app.errorhandler(Exception)
+def handle_exception(e):
+    """全ての未処理例外をError Reportingに送信"""
+    try:
+        # Error Reportingに報告
+        error_client.report_exception()
+        logger.exception(f"Unhandled exception: {e}")
+    except Exception as report_error:
+        logger.error(f"Failed to report error: {report_error}")
+    
+    return jsonify({
+        'error': 'Internal server error',
+        'timestamp': datetime.now(timezone.utc).isoformat()
+    }), 500
 
 # Redis接続設定
 REDIS_HOST = os.environ.get('REDIS_HOST', 'localhost')
@@ -266,6 +296,188 @@ class AnalyticsProcessor:
 # グローバルプロセッサインスタンス
 processor = AnalyticsProcessor()
 
+# Firestoreクライアント
+db = firestore.Client()
+
+
+def require_admin_auth(required_role='moderator'):
+    """
+    管理者認証デコレータ
+    
+    Args:
+        required_role: 必要な権限 ('moderator' or 'superadmin')
+    """
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            try:
+                # Authorizationヘッダーからトークンを取得
+                auth_header = request.headers.get('Authorization')
+                if not auth_header or not auth_header.startswith('Bearer '):
+                    logger.warning('Missing or invalid Authorization header')
+                    return jsonify({'error': 'Unauthorized - Missing token'}), 401
+                
+                token = auth_header.split(' ')[1]
+                
+                # IDトークンを検証
+                decoded_token = auth.verify_id_token(token)
+                user_id = decoded_token['uid']
+                
+                # カスタムクレームからロールを取得
+                user_role = decoded_token.get('role')
+                
+                # 権限チェック
+                if not user_role:
+                    logger.warning(f'User {user_id} has no role assigned')
+                    return jsonify({'error': 'Forbidden - No role assigned'}), 403
+                
+                if required_role == 'superadmin' and user_role != 'superadmin':
+                    logger.warning(f'User {user_id} with role {user_role} attempted superadmin operation')
+                    return jsonify({'error': 'Forbidden - Insufficient privileges'}), 403
+                
+                if user_role not in ['moderator', 'superadmin']:
+                    logger.warning(f'User {user_id} with invalid role {user_role} attempted admin operation')
+                    return jsonify({'error': 'Forbidden - Invalid role'}), 403
+                
+                # リクエストにユーザー情報を追加
+                request.admin_user_id = user_id
+                request.admin_user_role = user_role
+                
+                logger.info(f'Admin operation authorized for user {user_id} with role {user_role}')
+                
+                return f(*args, **kwargs)
+                
+            except auth.InvalidIdTokenError:
+                logger.warning('Invalid ID token provided')
+                return jsonify({'error': 'Unauthorized - Invalid token'}), 401
+            except Exception as e:
+                logger.error(f'Authentication error: {e}')
+                return jsonify({'error': 'Authentication failed'}), 500
+        
+        return decorated_function
+    return decorator
+
+
+def log_admin_operation(operation: str, target_id: str, target_type: str, details: Dict[str, Any]):
+    """
+    管理者操作の監査ログを記録
+    
+    Args:
+        operation: 操作種別 ('status_change', 'user_search', etc.)
+        target_id: 対象ID
+        target_type: 対象タイプ ('countdown', 'comment', 'user')
+        details: 詳細情報
+    """
+    try:
+        log_data = {
+            'moderatorId': request.admin_user_id,
+            'moderatorRole': request.admin_user_role,
+            'operation': operation,
+            'targetId': target_id,
+            'targetType': target_type,
+            'details': details,
+            'timestamp': firestore.SERVER_TIMESTAMP,
+            'ipAddress': request.remote_addr,
+            'userAgent': request.headers.get('User-Agent', '')
+        }
+        
+        db.collection('moderation_logs').add(log_data)
+        logger.info(f'Admin operation logged: {operation} on {target_type} {target_id} by {request.admin_user_id}')
+        
+    except Exception as e:
+        logger.error(f'Failed to log admin operation: {e}')
+        report_critical_error(e, 'admin_operation_logging_failed', {
+            'operation': operation,
+            'target_id': target_id,
+            'target_type': target_type
+        })
+
+
+def report_critical_error(error: Exception, context: str, additional_data: Dict[str, Any] = None):
+    """
+    重大なエラーをError Reportingに報告し、アラートをトリガー
+    
+    Args:
+        error: 発生した例外
+        context: エラーのコンテキスト
+        additional_data: 追加のデバッグ情報
+    """
+    try:
+        # 重大度の高いエラーとしてログ出力
+        logger.critical(f'CRITICAL ERROR in {context}: {error}', extra={
+            'context': context,
+            'additional_data': additional_data or {},
+            'severity': 'CRITICAL'
+        })
+        
+        # Error Reportingに送信
+        error_client.report_exception(
+            http_context=error_reporting.HTTPContext(
+                method=request.method if request else 'UNKNOWN',
+                url=request.url if request else 'UNKNOWN',
+                user_agent=request.headers.get('User-Agent', '') if request else '',
+                remote_ip=request.remote_addr if request else '',
+            )
+        )
+        
+    except Exception as report_error:
+        # エラー報告の失敗は標準ログにのみ記録
+        logger.error(f'Failed to report critical error: {report_error}')
+
+
+def check_system_health():
+    """
+    システムヘルスチェックを実行し、問題があればアラート
+    
+    Returns:
+        Dict: ヘルスチェック結果
+    """
+    health_status = {
+        'timestamp': datetime.now(timezone.utc).isoformat(),
+        'status': 'healthy',
+        'checks': {},
+        'issues': []
+    }
+    
+    # Redis接続チェック
+    try:
+        processor.redis.ping()
+        health_status['checks']['redis'] = 'healthy'
+    except Exception as e:
+        health_status['status'] = 'unhealthy'
+        health_status['checks']['redis'] = 'failed'
+        health_status['issues'].append(f'Redis connection failed: {e}')
+        report_critical_error(e, 'redis_health_check_failed')
+    
+    # Firestore接続チェック
+    try:
+        # 軽量なFirestoreクエリでヘルスチェック
+        test_collection = db.collection('health_check').limit(1)
+        list(test_collection.stream())
+        health_status['checks']['firestore'] = 'healthy'
+    except Exception as e:
+        health_status['status'] = 'unhealthy'
+        health_status['checks']['firestore'] = 'failed'
+        health_status['issues'].append(f'Firestore connection failed: {e}')
+        report_critical_error(e, 'firestore_health_check_failed')
+    
+    # メモリ使用量チェック（簡易版）
+    try:
+        import psutil
+        memory_percent = psutil.virtual_memory().percent
+        if memory_percent > 90:
+            health_status['status'] = 'warning'
+            health_status['issues'].append(f'High memory usage: {memory_percent}%')
+            logger.warning(f'High memory usage detected: {memory_percent}%')
+        health_status['checks']['memory'] = f'{memory_percent}%'
+    except ImportError:
+        health_status['checks']['memory'] = 'not_available'
+    except Exception as e:
+        health_status['checks']['memory'] = 'failed'
+        logger.warning(f'Memory check failed: {e}')
+    
+    return health_status
+
 
 @app.route('/process-events', methods=['POST'])
 def process_events():
@@ -503,23 +715,292 @@ def get_comments(countdown_id: str):
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/health', methods=['GET'])
-def health_check():
-    """ヘルスチェック"""
+@app.route('/admin/contents/moderate', methods=['POST'])
+@require_admin_auth('moderator')
+def moderate_content():
+    """
+    コンテンツモデレーションAPI
+    
+    コンテンツのステータスを変更し、監査ログを記録
+    """
     try:
-        # Redis接続確認
-        processor.redis.ping()
+        data = request.get_json()
+        
+        # 必須フィールドの検証
+        required_fields = ['contentId', 'contentType', 'newStatus', 'reason']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({'error': f'Missing required field: {field}'}), 400
+        
+        content_id = data['contentId']
+        content_type = data['contentType']  # 'countdown' or 'comment'
+        new_status = data['newStatus']
+        reason = data['reason']
+        notes = data.get('notes', '')
+        
+        # ステータスの検証
+        valid_statuses = ['visible', 'hidden_by_moderator', 'deleted_by_user']
+        if new_status not in valid_statuses:
+            return jsonify({'error': f'Invalid status. Must be one of: {valid_statuses}'}), 400
+        
+        # コンテンツタイプの検証
+        if content_type not in ['countdown', 'comment']:
+            return jsonify({'error': 'Invalid content type. Must be countdown or comment'}), 400
+        
+        # Firestoreコレクション名を決定
+        collection_name = 'counts' if content_type == 'countdown' else 'comments'
+        
+        # コンテンツの取得と更新
+        doc_ref = db.collection(collection_name).document(content_id)
+        doc = doc_ref.get()
+        
+        if not doc.exists:
+            return jsonify({'error': f'{content_type.capitalize()} not found'}), 404
+        
+        # 現在のデータを取得（監査ログ用）
+        current_data = doc.to_dict()
+        old_status = current_data.get('status', 'visible')
+        
+        # モデレーション情報を作成
+        moderation_info = {
+            'moderatorId': request.admin_user_id,
+            'moderatedAt': firestore.SERVER_TIMESTAMP,
+            'reason': reason,
+            'notes': notes,
+            'oldStatus': old_status
+        }
+        
+        # ドキュメントを更新
+        update_data = {
+            'status': new_status,
+            'moderationInfo': moderation_info
+        }
+        
+        doc_ref.update(update_data)
+        
+        # 監査ログを記録
+        log_admin_operation(
+            operation='status_change',
+            target_id=content_id,
+            target_type=content_type,
+            details={
+                'oldStatus': old_status,
+                'newStatus': new_status,
+                'reason': reason,
+                'notes': notes
+            }
+        )
+        
+        logger.info(f'Content {content_id} status changed from {old_status} to {new_status} by {request.admin_user_id}')
         
         return jsonify({
-            'status': 'healthy',
-            'redis': 'connected',
-            'timestamp': datetime.now(timezone.utc).isoformat(),
-            'version': '1.0'
+            'success': True,
+            'contentId': content_id,
+            'contentType': content_type,
+            'oldStatus': old_status,
+            'newStatus': new_status,
+            'moderatorId': request.admin_user_id,
+            'timestamp': datetime.now(timezone.utc).isoformat()
         })
+        
+    except Exception as e:
+        logger.error(f'Error in content moderation: {e}')
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/admin/users/search', methods=['GET'])
+@require_admin_auth('moderator')
+def search_users():
+    """
+    ユーザー検索API
+    
+    ユーザーIDや名前でユーザーを検索
+    """
+    try:
+        query = request.args.get('q', '').strip()
+        limit = int(request.args.get('limit', 20))
+        
+        if not query:
+            return jsonify({'error': 'Search query is required'}), 400
+        
+        if limit > 100:
+            limit = 100  # 上限を設定
+        
+        # Firebase Authからユーザーを検索
+        users = []
+        try:
+            # UIDで検索を試行
+            user_record = auth.get_user(query)
+            users.append({
+                'uid': user_record.uid,
+                'email': user_record.email,
+                'displayName': user_record.display_name,
+                'disabled': user_record.disabled,
+                'emailVerified': user_record.email_verified,
+                'creationTime': user_record.user_metadata.creation_timestamp.isoformat() if user_record.user_metadata.creation_timestamp else None,
+                'lastSignInTime': user_record.user_metadata.last_sign_in_timestamp.isoformat() if user_record.user_metadata.last_sign_in_timestamp else None
+            })
+        except auth.UserNotFoundError:
+            # UIDで見つからない場合はメールで検索
+            try:
+                user_record = auth.get_user_by_email(query)
+                users.append({
+                    'uid': user_record.uid,
+                    'email': user_record.email,
+                    'displayName': user_record.display_name,
+                    'disabled': user_record.disabled,
+                    'emailVerified': user_record.email_verified,
+                    'creationTime': user_record.user_metadata.creation_timestamp.isoformat() if user_record.user_metadata.creation_timestamp else None,
+                    'lastSignInTime': user_record.user_metadata.last_sign_in_timestamp.isoformat() if user_record.user_metadata.last_sign_in_timestamp else None
+                })
+            except auth.UserNotFoundError:
+                pass
+        
+        # 監査ログを記録
+        log_admin_operation(
+            operation='user_search',
+            target_id=query,
+            target_type='user',
+            details={
+                'searchQuery': query,
+                'resultsCount': len(users)
+            }
+        )
+        
+        return jsonify({
+            'users': users,
+            'searchQuery': query,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f'Error in user search: {e}')
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/admin/contents/reported', methods=['GET'])
+@require_admin_auth('moderator')
+def get_reported_contents():
+    """
+    通報されたコンテンツ一覧取得API
+    
+    ユーザーからの通報があるコンテンツを取得
+    """
+    try:
+        limit = int(request.args.get('limit', 50))
+        status_filter = request.args.get('status', 'pending')  # pending, reviewed, resolved
+        
+        if limit > 100:
+            limit = 100
+        
+        # reportsコレクションから通報を取得
+        query = db.collection('reports')
+        
+        if status_filter != 'all':
+            query = query.where('status', '==', status_filter)
+        
+        query = query.order_by('createdAt', direction=firestore.Query.DESCENDING)
+        query = query.limit(limit)
+        
+        docs = query.stream()
+        
+        reports = []
+        for doc in docs:
+            data = doc.to_dict()
+            report_data = {
+                'id': doc.id,
+                'contentId': data.get('contentId'),
+                'contentType': data.get('contentType'),
+                'reportedBy': data.get('reportedBy'),
+                'reason': data.get('reason'),
+                'description': data.get('description', ''),
+                'status': data.get('status', 'pending'),
+                'createdAt': data.get('createdAt').isoformat() if data.get('createdAt') else None,
+                'reviewedBy': data.get('reviewedBy'),
+                'reviewedAt': data.get('reviewedAt').isoformat() if data.get('reviewedAt') else None
+            }
+            reports.append(report_data)
+        
+        # 監査ログを記録
+        log_admin_operation(
+            operation='view_reports',
+            target_id='reports_list',
+            target_type='reports',
+            details={
+                'statusFilter': status_filter,
+                'limit': limit,
+                'resultsCount': len(reports)
+            }
+        )
+        
+        return jsonify({
+            'reports': reports,
+            'statusFilter': status_filter,
+            'limit': limit,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f'Error getting reported contents: {e}')
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    """拡張ヘルスチェック"""
+    try:
+        health_status = check_system_health()
+        
+        # ステータスに応じてHTTPコードを決定
+        if health_status['status'] == 'healthy':
+            return jsonify(health_status), 200
+        elif health_status['status'] == 'warning':
+            return jsonify(health_status), 200  # 警告レベルは200で返す
+        else:
+            return jsonify(health_status), 503  # Service Unavailable
+            
     except Exception as e:
         logger.error(f"Health check failed: {e}")
+        report_critical_error(e, 'health_check_endpoint_failed')
+        
         return jsonify({
-            'status': 'unhealthy',
+            'status': 'error',
+            'error': str(e),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'version': '1.2'
+        }), 500
+
+
+@app.route('/health/detailed', methods=['GET'])
+def detailed_health_check():
+    """詳細ヘルスチェック（管理者用）"""
+    try:
+        health_status = check_system_health()
+        
+        # 追加の詳細情報を含める
+        health_status['service_info'] = {
+            'version': '1.2',
+            'uptime_check': 'ok',
+            'environment': os.environ.get('ENVIRONMENT', 'unknown'),
+        }
+        
+        # Redis詳細情報
+        try:
+            redis_info = processor.redis.info()
+            health_status['redis_details'] = {
+                'version': redis_info.get('redis_version'),
+                'connected_clients': redis_info.get('connected_clients'),
+                'used_memory_human': redis_info.get('used_memory_human'),
+            }
+        except Exception as e:
+            health_status['redis_details'] = {'error': str(e)}
+        
+        return jsonify(health_status)
+        
+    except Exception as e:
+        logger.error(f"Detailed health check failed: {e}")
+        return jsonify({
+            'status': 'error',
             'error': str(e),
             'timestamp': datetime.now(timezone.utc).isoformat()
         }), 500

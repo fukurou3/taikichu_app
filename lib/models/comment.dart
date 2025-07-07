@@ -9,6 +9,8 @@ class Comment {
   final DateTime createdAt;
   final int likesCount;
   final int repliesCount;
+  final String status;           // visible, hidden_by_moderator, deleted_by_user
+  final Map<String, dynamic>? moderationInfo; // 運営操作情報
 
   Comment({
     required this.id,
@@ -19,6 +21,8 @@ class Comment {
     required this.createdAt,
     this.likesCount = 0,
     this.repliesCount = 0,
+    this.status = 'visible',
+    this.moderationInfo,
   });
 
   factory Comment.fromFirestore(
@@ -35,6 +39,8 @@ class Comment {
       createdAt: (data?['createdAt'] as Timestamp).toDate(),
       likesCount: data?['likesCount'] as int? ?? 0,
       repliesCount: data?['repliesCount'] as int? ?? 0,
+      status: data?['status'] as String? ?? 'visible',
+      moderationInfo: data?['moderationInfo'] as Map<String, dynamic>?,
     );
   }
 
@@ -47,6 +53,8 @@ class Comment {
       "createdAt": Timestamp.fromDate(createdAt),
       "likesCount": likesCount,
       "repliesCount": repliesCount,
+      "status": status,
+      if (moderationInfo != null) "moderationInfo": moderationInfo,
     };
   }
 }

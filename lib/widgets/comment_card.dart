@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/comment.dart';
+import 'report_dialog.dart';
 
 class CommentCard extends StatelessWidget {
   final Comment comment;
@@ -128,13 +129,36 @@ class CommentCard extends StatelessWidget {
                     ),
                     
                     // その他ボタン
-                    IconButton(
-                      onPressed: () {},
+                    PopupMenuButton<String>(
                       icon: Icon(
                         Icons.more_horiz,
                         color: Colors.grey[600],
                         size: 18,
                       ),
+                      onSelected: (value) {
+                        if (value == 'report') {
+                          showReportDialog(
+                            context: context,
+                            contentId: comment.id,
+                            contentType: 'comment',
+                            contentTitle: comment.content.length > 30 
+                                ? '${comment.content.substring(0, 30)}...'
+                                : comment.content,
+                          );
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(
+                          value: 'report',
+                          child: Row(
+                            children: [
+                              Icon(Icons.flag, size: 16, color: Colors.red),
+                              SizedBox(width: 8),
+                              Text('通報する'),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),

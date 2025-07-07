@@ -4,6 +4,7 @@ import '../screens/thread_screen.dart';
 import '../services/comment_service.dart';
 import '../services/scalable_like_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'report_dialog.dart';
 
 class CountdownCard extends StatefulWidget {
   final Countdown countdown;
@@ -176,6 +177,32 @@ class _CountdownCardState extends State<CountdownCard> {
                           ),
                         ],
                       ),
+                    ),
+                    const SizedBox(width: 8),
+                    PopupMenuButton<String>(
+                      icon: const Icon(Icons.more_horiz, size: 16, color: Colors.grey),
+                      onSelected: (value) {
+                        if (value == 'report') {
+                          showReportDialog(
+                            context: context,
+                            contentId: widget.countdown.id,
+                            contentType: 'countdown',
+                            contentTitle: widget.countdown.eventName,
+                          );
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(
+                          value: 'report',
+                          child: Row(
+                            children: [
+                              Icon(Icons.flag, size: 16, color: Colors.red),
+                              SizedBox(width: 8),
+                              Text('通報する'),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),

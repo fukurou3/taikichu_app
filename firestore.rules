@@ -160,6 +160,29 @@ service cloud.firestore {
       allow read: if isServiceAccount();
       allow write: if isServiceAccount();
     }
+
+    // ==============================================
+    // 🛡️ モデレーション関連コレクション
+    // ==============================================
+
+    /// moderation_logs - 管理者操作監査ログ
+    /// ❌ サービスアカウントのみアクセス可能
+    match /moderation_logs/{logId} {
+      allow read: if isServiceAccount();
+      allow write: if isServiceAccount();
+    }
+
+    /// reports - ユーザー通報
+    /// ✅ 通報者は作成のみ、サービスアカウントは全権限
+    match /reports/{reportId} {
+      allow read: if isServiceAccount();
+      allow create: if isAuthenticated() && 
+                       request.resource.data.reportedBy == request.auth.uid &&
+                       request.resource.data.createdAt == request.time &&
+                       request.resource.data.status == 'pending';
+      allow update: if isServiceAccount();
+      allow delete: if isServiceAccount();
+    }
   }
 }
 

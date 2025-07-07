@@ -16,6 +16,8 @@ class Countdown {
   final int recentLikesCount;    // 24時間以内のいいね数
   final int recentViewsCount;    // 24時間以内の閲覧数
   final int? commentCount;       // 互換性のため追加
+  final String status;           // visible, hidden_by_moderator, deleted_by_user
+  final Map<String, dynamic>? moderationInfo; // 運営操作情報
 
   Countdown({
     required this.id,
@@ -33,6 +35,8 @@ class Countdown {
     this.recentLikesCount = 0,
     this.recentViewsCount = 0,
     this.commentCount,
+    this.status = 'visible',
+    this.moderationInfo,
   });
 
   factory Countdown.fromFirestore(
@@ -56,6 +60,8 @@ class Countdown {
       recentLikesCount: data?['recentLikesCount'] as int? ?? 0,
       recentViewsCount: data?['recentViewsCount'] as int? ?? 0,
       commentCount: data?['commentCount'] as int? ?? data?['commentsCount'] as int? ?? 0,
+      status: data?['status'] as String? ?? 'visible',
+      moderationInfo: data?['moderationInfo'] as Map<String, dynamic>?,
     );
   }
 
@@ -74,6 +80,8 @@ class Countdown {
       "recentCommentsCount": recentCommentsCount,
       "recentLikesCount": recentLikesCount,
       "recentViewsCount": recentViewsCount,
+      "status": status,
+      if (moderationInfo != null) "moderationInfo": moderationInfo,
     };
   }
 
