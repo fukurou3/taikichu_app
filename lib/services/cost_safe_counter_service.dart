@@ -5,14 +5,6 @@ import 'dart:math';
 /// 
 /// 🎯 目的: 分散カウンターの読み取りコスト爆発を防ぐ
 /// 
-/// 🚨 問題: 
-/// - 従来は10シャードを毎回読み取り → 人気投稿で10,000 reads/秒
-/// - 月額コスト: $50,000+
-/// 
-/// ✅ 解決策:
-/// - クライアントは集計済みのcountsドキュメントのみ読み取り
-/// - Cloud Functionsが数分おきにシャードを集計して書き戻し
-/// - 読み取りコストを90%削減
 class CostSafeCounterService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static const int _numShards = 10;
