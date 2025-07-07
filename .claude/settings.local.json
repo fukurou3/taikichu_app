@@ -30,7 +30,25 @@
       "Bash(docker-compose:*)",
       "Bash(curl:*)",
       "Bash(docker exec:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(/mnt/c/Users/fukur/flutter/bin/flutter create admin_interface --template=app --platforms=web)",
+      "Bash(sed:*)",
+      "Bash(./scripts/verify_setup.sh:*)",
+      "Bash(gcloud config get-value:*)",
+      "Bash(gcloud projects:*)",
+      "Bash(gcloud auth:*)",
+      "Bash(gcloud config set:*)",
+      "Bash(gcloud run deploy:*)",
+      "Bash(--source . )",
+      "Bash(--platform managed )",
+      "Bash(--region asia-northeast1 )",
+      "Bash(--allow-unauthenticated )",
+      "Bash(--set-env-vars=\"REDIS_HOST=10.154.247.115,REDIS_PORT=6379,ENVIRONMENT=production\" )",
+      "Bash(--memory=1Gi )",
+      "Bash(--cpu=1000m )",
+      "Bash(--max-instances=10)",
+      "Bash(gcloud run services describe:*)",
+      "Bash(gcloud run deploy:*)"
     ],
     "deny": []
   }

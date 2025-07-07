@@ -1,7 +1,9 @@
 // lib/main.dart
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'firebase_options.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'screens/simple_home_screen.dart';
@@ -21,13 +23,45 @@ void main() async { // main関数を非同期 (async) に変更
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
+  // 🔥 Firebase Crashlytics の初期化と設定
+  // フレームワークでキャッチされないエラーをCrashlyticsに送信
+  FlutterError.onError = (errorDetails) {
+    FirebaseCrashlytics.instance.recordFlutterFatalError(errorDetails);
+  };
+  
+  // Dart VM でキャッチされないエラーをCrashlyticsに送信
+  PlatformDispatcher.instance.onError = (error, stack) {
+    FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+    return true;
+  };
+
+  // デバッグモードでのCrashlytics無効化（開発時のノイズを防ぐ）
+  if (kDebugMode) {
+    await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(false);
+  } else {
+    await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(true);
+  }
+
   // 匿名認証でログイン (開発中のテスト用、本番では別の認証方法を実装します)
   // FirebaseコンソールでAuthenticationの「匿名」プロバイダを有効にする必要があります。
   try {
     await FirebaseAuth.instance.signInAnonymously();
     print("Signed in anonymously."); // 匿名ログインが成功したことをコンソールに出力
+    
+    // Crashlyticsにユーザー識別子を設定
+    await FirebaseCrashlytics.instance.setUserIdentifier(
+      FirebaseAuth.instance.currentUser?.uid ?? 'anonymous',
+    );
+    
   } catch (e) {
     print("Error signing in anonymously: $e"); // エラーが発生した場合はコンソールに出力
+    
+    // 認証エラーもCrashlyticsに報告
+    FirebaseCrashlytics.instance.recordError(
+      e,
+      StackTrace.current,
+      reason: 'Anonymous authentication failed',
+    );
   }
 
   // アプリケーションを実行

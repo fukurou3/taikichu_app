@@ -1,6 +1,7 @@
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../utils/error_reporter.dart';
 
 /// MVP分析基盤クライアント
 /// 
@@ -31,10 +32,24 @@ class MVPAnalyticsClient {
         final data = jsonDecode(response.body);
         return (data['trend_score'] as num?)?.toDouble() ?? 0.0;
       } else {
+        await ErrorReporter.reportApiError(
+          '$_baseUrl/trend-score/$countdownId',
+          response.statusCode,
+          response.body,
+          'HTTP ${response.statusCode}: Failed to get trend score',
+          StackTrace.current,
+        );
         print('MVPAnalyticsClient - Error getting trend score: ${response.statusCode}');
         return 0.0;
       }
     } catch (e) {
+      await ErrorReporter.reportApiError(
+        '$_baseUrl/trend-score/$countdownId',
+        null,
+        null,
+        e,
+        StackTrace.current,
+      );
       print('MVPAnalyticsClient - Error getting trend score: $e');
       return 0.0; // フォールバック
     }
