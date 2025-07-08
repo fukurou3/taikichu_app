@@ -1,0 +1,142 @@
+# Cloud Run マイクロサービス一括デプロイ設定
+# 各サービスの最適化された設定
+
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: fanout-service
+  annotations:
+    # Cloud Run最適化設定
+    run.googleapis.com/execution-environment: gen2
+    run.googleapis.com/ingress: internal
+    run.googleapis.com/cpu-throttling: "false"
+spec:
+  template:
+    metadata:
+      annotations:
+        # スケーリング設定
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "100"
+        # リソース最適化
+        run.googleapis.com/memory: "512Mi"
+        run.googleapis.com/cpu: "1000m"
+        # 同時実行数（ファンアウト処理は並行性重要）
+        run.googleapis.com/execution-environment: gen2
+    spec:
+      serviceAccountName: fanout-service@taikichu-app-c8dcd.iam.gserviceaccount.com
+      containers:
+      - image: gcr.io/taikichu-app-c8dcd/fanout-service:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: REDIS_HOST
+          value: "10.0.0.3"  # Memory Store Redis private IP
+        - name: REDIS_PORT
+          value: "6379"
+        - name: PROJECT_ID
+          value: "taikichu-app-c8dcd"
+        resources:
+          limits:
+            memory: "512Mi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: like-service
+  annotations:
+    run.googleapis.com/execution-environment: gen2
+    run.googleapis.com/ingress: internal
+    run.googleapis.com/cpu-throttling: "false"
+spec:
+  template:
+    metadata:
+      annotations:
+        # いいね処理は高頻度・低レイテンシ
+        autoscaling.knative.dev/minScale: "1"  # 常時1インスタンス
+        autoscaling.knative.dev/maxScale: "200"
+        # 高性能設定
+        run.googleapis.com/memory: "1Gi"
+        run.googleapis.com/cpu: "2000m"
+        run.googleapis.com/execution-environment: gen2
+    spec:
+      serviceAccountName: like-service@taikichu-app-c8dcd.iam.gserviceaccount.com
+      containers:
+      - image: gcr.io/taikichu-app-c8dcd/like-service:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: REDIS_HOST
+          value: "10.0.0.3"
+        - name: REDIS_PORT
+          value: "6379"
+        - name: PROJECT_ID
+          value: "taikichu-app-c8dcd"
+        resources:
+          limits:
+            memory: "1Gi"
+            cpu: "2000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+
+---
+# 既存のAnalytics Service設定（最適化版）
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: analytics-service
+  annotations:
+    run.googleapis.com/execution-environment: gen2
+    run.googleapis.com/ingress: all  # 外部アクセス可能
+    run.googleapis.com/cpu-throttling: "false"
+spec:
+  template:
+    metadata:
+      annotations:
+        # 中程度のスケール設定
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "50"
+        # バランス型リソース
+        run.googleapis.com/memory: "1Gi"
+        run.googleapis.com/cpu: "1000m"
+        run.googleapis.com/execution-environment: gen2
+    spec:
+      serviceAccountName: analytics-service@taikichu-app-c8dcd.iam.gserviceaccount.com
+      containers:
+      - image: gcr.io/taikichu-app-c8dcd/analytics-service:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: REDIS_HOST
+          value: "10.0.0.3"
+        - name: REDIS_PORT
+          value: "6379"
+        - name: PROJECT_ID
+          value: "taikichu-app-c8dcd"
+        resources:
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
