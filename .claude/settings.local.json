@@ -56,7 +56,8 @@
       "Bash(systemctl:*)",
       "Bash(gcloud run services update:*)",
       "Bash(gcloud pubsub subscriptions delete:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(firebase:*)"
     ],
     "deny": []
   }

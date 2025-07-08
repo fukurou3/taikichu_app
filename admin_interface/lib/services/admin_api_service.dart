@@ -1,6 +1,89 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import '../../../lib/services/moderation_logs_service.dart';
+// import '../../../lib/services/moderation_logs_service.dart'; // 🛡️ バックエンド主導に移行
+// import '../../../lib/services/admin_authorization_service.dart'; // 🛡️ バックエンド主導に移行
+
+// 🛡️ バックエンド主導で監査ログ記録を実現
+// ModerationLogクラスは監査ログ表示用のみ
+class ModerationLog {
+  final String id;
+  final String action;
+  final String targetType;
+  final String targetId;
+  final String reason;
+  final String adminUid;
+  final String? adminEmail;
+  final DateTime timestamp;
+  final String? ipAddress;
+  final String? userAgent;
+  final String? notes;
+  final Map<String, dynamic>? metadata;
+  final String? previousState;
+  final String? newState;
+  final String severity;
+  final bool requiresApproval;
+
+  ModerationLog({
+    required this.id,
+    required this.action,
+    required this.targetType,
+    required this.targetId,
+    required this.reason,
+    required this.adminUid,
+    this.adminEmail,
+    required this.timestamp,
+    this.ipAddress,
+    this.userAgent,
+    this.notes,
+    this.metadata,
+    this.previousState,
+    this.newState,
+    required this.severity,
+    required this.requiresApproval,
+  });
+
+  factory ModerationLog.fromJson(Map<String, dynamic> json) {
+    return ModerationLog(
+      id: json['id'],
+      action: json['action'],
+      targetType: json['targetType'],
+      targetId: json['targetId'],
+      reason: json['reason'],
+      adminUid: json['adminUid'],
+      adminEmail: json['adminEmail'],
+      timestamp: DateTime.parse(json['timestamp']),
+      ipAddress: json['ipAddress'],
+      userAgent: json['userAgent'],
+      notes: json['notes'],
+      metadata: json['metadata'],
+      previousState: json['previousState'],
+      newState: json['newState'],
+      severity: json['severity'],
+      requiresApproval: json['requiresApproval'] ?? false,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'action': action,
+      'targetType': targetType,
+      'targetId': targetId,
+      'reason': reason,
+      'adminUid': adminUid,
+      'adminEmail': adminEmail,
+      'timestamp': timestamp.toIso8601String(),
+      'ipAddress': ipAddress,
+      'userAgent': userAgent,
+      'notes': notes,
+      'metadata': metadata,
+      'previousState': previousState,
+      'newState': newState,
+      'severity': severity,
+      'requiresApproval': requiresApproval,
+    };
+  }
+}
 
 class AdminApiService {
   // Cloud Run analytics service URL
@@ -15,7 +98,7 @@ class AdminApiService {
     if (_authToken != null) 'Authorization': 'Bearer $_authToken',
   };
 
-  /// コンテンツのモデレーション（監査ログ付き）
+  /// コンテンツのモデレーション（バックエンド主導）
   Future<ApiResponse<Map<String, dynamic>>> moderateContent({
     required String contentId,
     required String contentType,
@@ -24,24 +107,7 @@ class AdminApiService {
     String? notes,
   }) async {
     try {
-      // 【重要】操作前に監査ログを記録
-      final auditLogged = await ModerationLogsService.logAdminAction(
-        action: AdminActions.contentReview,
-        targetType: contentType,
-        targetId: contentId,
-        reason: reason,
-        notes: notes,
-        newState: newStatus,
-        metadata: {
-          'moderation_type': 'content_moderation',
-          'action_source': 'admin_interface',
-        },
-      );
-
-      if (!auditLogged) {
-        return ApiResponse.error('監査ログの記録に失敗しました。操作を中止します。');
-      }
-
+      // 🛡️ バックエンドが全ての認証・認可・監査ログを処理
       final response = await http.post(
         Uri.parse('$baseUrl/admin/contents/moderate'),
         headers: _headers,
@@ -51,77 +117,27 @@ class AdminApiService {
           'newStatus': newStatus,
           'reason': reason,
           if (notes != null) 'notes': notes,
-          'audit_logged': true, // 監査ログ記録済みフラグ
         }),
       );
 
       if (response.statusCode == 200) {
-        // 成功時は追加の監査ログを記録
-        await ModerationLogsService.logAdminAction(
-          action: '${AdminActions.contentReview}_completed',
-          targetType: contentType,
-          targetId: contentId,
-          reason: '操作完了',
-          metadata: {
-            'operation_result': 'success',
-            'response_status': response.statusCode,
-          },
-        );
-        
         return ApiResponse.success(jsonDecode(response.body));
       } else {
-        // 失敗時も監査ログを記録
-        await ModerationLogsService.logAdminAction(
-          action: '${AdminActions.contentReview}_failed',
-          targetType: contentType,
-          targetId: contentId,
-          reason: '操作失敗',
-          metadata: {
-            'operation_result': 'failed',
-            'response_status': response.statusCode,
-            'error_body': response.body,
-          },
-        );
-        
         final error = jsonDecode(response.body);
         return ApiResponse.error(error['error'] ?? 'Unknown error');
       }
     } catch (e) {
-      // 例外発生時も監査ログを記録
-      await ModerationLogsService.logAdminAction(
-        action: '${AdminActions.contentReview}_error',
-        targetType: contentType,
-        targetId: contentId,
-        reason: '例外発生',
-        metadata: {
-          'operation_result': 'exception',
-          'error_message': e.toString(),
-        },
-      );
-      
       return ApiResponse.error('Network error: $e');
     }
   }
 
-  /// ユーザー検索（監査ログ付き）
+  /// ユーザー検索（バックエンド主導）
   Future<ApiResponse<List<AdminUser>>> searchUsers({
     required String query,
     int limit = 20,
   }) async {
     try {
-      // 監査ログを記録
-      await ModerationLogsService.logAdminAction(
-        action: 'user_search',
-        targetType: AdminTargetTypes.user,
-        targetId: 'search_query',
-        reason: 'ユーザー検索実行',
-        metadata: {
-          'search_query': query,
-          'search_limit': limit,
-          'action_source': 'admin_interface',
-        },
-      );
-
+      // 🛡️ バックエンドが監査ログを自動記録
       final uri = Uri.parse('$baseUrl/admin/users/search').replace(
         queryParameters: {
           'q': query,
@@ -136,20 +152,6 @@ class AdminApiService {
         final users = (data['users'] as List)
             .map((user) => AdminUser.fromJson(user))
             .toList();
-
-        // 検索結果も監査ログに記録
-        await ModerationLogsService.logAdminAction(
-          action: 'user_search_completed',
-          targetType: AdminTargetTypes.user,
-          targetId: 'search_result',
-          reason: '検索完了',
-          metadata: {
-            'search_query': query,
-            'results_count': users.length,
-            'operation_result': 'success',
-          },
-        );
-
         return ApiResponse.success(users);
       } else {
         final error = jsonDecode(response.body);
@@ -160,25 +162,13 @@ class AdminApiService {
     }
   }
 
-  /// 通報されたコンテンツ一覧取得（監査ログ付き）
+  /// 通報されたコンテンツ一覧取得（バックエンド主導）
   Future<ApiResponse<List<Report>>> getReportedContents({
     int limit = 50,
     String status = 'pending',
   }) async {
     try {
-      // 監査ログを記録
-      await ModerationLogsService.logAdminAction(
-        action: 'reports_view',
-        targetType: AdminTargetTypes.report,
-        targetId: 'report_list',
-        reason: '通報一覧表示',
-        metadata: {
-          'view_limit': limit,
-          'filter_status': status,
-          'action_source': 'admin_interface',
-        },
-      );
-
+      // 🛡️ バックエンドが監査ログを自動記録
       final uri = Uri.parse('$baseUrl/admin/contents/reported').replace(
         queryParameters: {
           'limit': limit.toString(),
@@ -203,7 +193,7 @@ class AdminApiService {
     }
   }
 
-  /// ユーザーの停止・BAN（監査ログ付き）
+  /// ユーザーの停止・BAN（バックエンド主導）
   Future<ApiResponse<Map<String, dynamic>>> banUser({
     required String userId,
     required String reason,
@@ -211,24 +201,7 @@ class AdminApiService {
     int? durationDays,
   }) async {
     try {
-      // 【重要】高リスク操作の監査ログを記録
-      final auditLogged = await ModerationLogsService.logAdminAction(
-        action: AdminActions.userBan,
-        targetType: AdminTargetTypes.user,
-        targetId: userId,
-        reason: reason,
-        notes: notes,
-        metadata: {
-          'ban_duration_days': durationDays,
-          'action_source': 'admin_interface',
-          'severity': 'HIGH',
-        },
-      );
-
-      if (!auditLogged) {
-        return ApiResponse.error('監査ログの記録に失敗しました。操作を中止します。');
-      }
-
+      // 🛡️ バックエンドが全ての認証・認可・監査ログを処理
       final response = await http.post(
         Uri.parse('$baseUrl/admin/users/ban'),
         headers: _headers,
@@ -237,22 +210,10 @@ class AdminApiService {
           'reason': reason,
           if (notes != null) 'notes': notes,
           if (durationDays != null) 'durationDays': durationDays,
-          'audit_logged': true,
         }),
       );
 
       if (response.statusCode == 200) {
-        await ModerationLogsService.logAdminAction(
-          action: '${AdminActions.userBan}_completed',
-          targetType: AdminTargetTypes.user,
-          targetId: userId,
-          reason: 'BAN操作完了',
-          metadata: {
-            'operation_result': 'success',
-            'response_status': response.statusCode,
-          },
-        );
-        
         return ApiResponse.success(jsonDecode(response.body));
       } else {
         final error = jsonDecode(response.body);
@@ -263,7 +224,7 @@ class AdminApiService {
     }
   }
 
-  /// コンテンツの削除（監査ログ付き）
+  /// コンテンツの削除（バックエンド主導）
   Future<ApiResponse<Map<String, dynamic>>> deleteContent({
     required String contentId,
     required String contentType,
@@ -271,23 +232,7 @@ class AdminApiService {
     String? notes,
   }) async {
     try {
-      // 【重要】高リスク操作の監査ログを記録
-      final auditLogged = await ModerationLogsService.logAdminAction(
-        action: AdminActions.contentDelete,
-        targetType: contentType,
-        targetId: contentId,
-        reason: reason,
-        notes: notes,
-        metadata: {
-          'action_source': 'admin_interface',
-          'severity': 'HIGH',
-        },
-      );
-
-      if (!auditLogged) {
-        return ApiResponse.error('監査ログの記録に失敗しました。操作を中止します。');
-      }
-
+      // 🛡️ バックエンドが全ての認証・認可・監査ログを処理
       final response = await http.delete(
         Uri.parse('$baseUrl/admin/contents/$contentId'),
         headers: _headers,
@@ -295,22 +240,10 @@ class AdminApiService {
           'contentType': contentType,
           'reason': reason,
           if (notes != null) 'notes': notes,
-          'audit_logged': true,
         }),
       );
 
       if (response.statusCode == 200) {
-        await ModerationLogsService.logAdminAction(
-          action: '${AdminActions.contentDelete}_completed',
-          targetType: contentType,
-          targetId: contentId,
-          reason: 'コンテンツ削除完了',
-          metadata: {
-            'operation_result': 'success',
-            'response_status': response.statusCode,
-          },
-        );
-        
         return ApiResponse.success(jsonDecode(response.body));
       } else {
         final error = jsonDecode(response.body);
@@ -321,7 +254,7 @@ class AdminApiService {
     }
   }
 
-  /// 監査ログの取得
+  /// 監査ログの取得（バックエンド主導）
   Future<ApiResponse<List<ModerationLog>>> getAuditLogs({
     String? adminUid,
     String? targetType,
@@ -333,43 +266,68 @@ class AdminApiService {
     String? lastDocumentId,
   }) async {
     try {
-      final logs = await ModerationLogsService.getModerationLogs(
-        adminUid: adminUid,
-        targetType: targetType,
-        targetId: targetId,
-        action: action,
-        startDate: startDate,
-        endDate: endDate,
-        limit: limit,
-        lastDocumentId: lastDocumentId,
+      // 🛡️ バックエンドから監査ログを取得
+      final uri = Uri.parse('$baseUrl/admin/logs').replace(
+        queryParameters: {
+          if (adminUid != null) 'adminUid': adminUid,
+          if (targetType != null) 'targetType': targetType,
+          if (targetId != null) 'targetId': targetId,
+          if (action != null) 'action': action,
+          if (startDate != null) 'startDate': startDate.toIso8601String(),
+          if (endDate != null) 'endDate': endDate.toIso8601String(),
+          'limit': limit.toString(),
+          if (lastDocumentId != null) 'lastDocumentId': lastDocumentId,
+        },
       );
 
-      return ApiResponse.success(logs);
+      final response = await http.get(uri, headers: _headers);
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final logs = (data['logs'] as List)
+            .map((log) => ModerationLog.fromJson(log))
+            .toList();
+        return ApiResponse.success(logs);
+      } else {
+        final error = jsonDecode(response.body);
+        return ApiResponse.error(error['error'] ?? 'Unknown error');
+      }
     } catch (e) {
       return ApiResponse.error('監査ログの取得に失敗しました: $e');
     }
   }
 
-  /// 管理者活動統計の取得
+  /// 管理者活動統計の取得（バックエンド主導）
   Future<ApiResponse<Map<String, dynamic>>> getAdminStats({
     String? adminUid,
     DateTime? startDate,
     DateTime? endDate,
   }) async {
     try {
-      final stats = await ModerationLogsService.getAdminActivityStats(
-        adminUid: adminUid,
-        startDate: startDate,
-        endDate: endDate,
+      // 🛡️ バックエンドから管理者統計を取得
+      final uri = Uri.parse('$baseUrl/admin/activity-stats').replace(
+        queryParameters: {
+          if (adminUid != null) 'adminUid': adminUid,
+          if (startDate != null) 'startDate': startDate.toIso8601String(),
+          if (endDate != null) 'endDate': endDate.toIso8601String(),
+        },
       );
 
-      return ApiResponse.success(stats);
+      final response = await http.get(uri, headers: _headers);
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return ApiResponse.success(data);
+      } else {
+        final error = jsonDecode(response.body);
+        return ApiResponse.error(error['error'] ?? 'Unknown error');
+      }
     } catch (e) {
       return ApiResponse.error('統計情報の取得に失敗しました: $e');
     }
   }
 
-  /// 通報の解決（監査ログ付き）
+  /// 通報の解決（バックエンド主導）
   Future<ApiResponse<Map<String, dynamic>>> resolveReport({
     required String reportId,
     required String resolution,
@@ -377,22 +335,7 @@ class AdminApiService {
     String? notes,
   }) async {
     try {
-      final auditLogged = await ModerationLogsService.logAdminAction(
-        action: AdminActions.reportResolve,
-        targetType: AdminTargetTypes.report,
-        targetId: reportId,
-        reason: reason,
-        notes: notes,
-        metadata: {
-          'resolution_type': resolution,
-          'action_source': 'admin_interface',
-        },
-      );
-
-      if (!auditLogged) {
-        return ApiResponse.error('監査ログの記録に失敗しました。操作を中止します。');
-      }
-
+      // 🛡️ バックエンドが全ての認証・認可・監査ログを処理
       final response = await http.post(
         Uri.parse('$baseUrl/admin/reports/$reportId/resolve'),
         headers: _headers,
@@ -400,7 +343,6 @@ class AdminApiService {
           'resolution': resolution,
           'reason': reason,
           if (notes != null) 'notes': notes,
-          'audit_logged': true,
         }),
       );
 

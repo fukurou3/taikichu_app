@@ -91,12 +91,19 @@ class Sidebar extends StatelessWidget {
                   isSelected: selectedIndex == 3,
                   onTap: () => onItemSelected(3),
                 ),
+                SidebarItem(
+                  icon: Icons.assignment,
+                  title: '監査ログ',
+                  isSelected: selectedIndex == 4,
+                  onTap: () => onItemSelected(4),
+                  badge: '🛡️',
+                ),
                 if (userRole == 'superadmin') ...[
                   const Divider(),
                   SidebarItem(
                     icon: Icons.settings,
                     title: 'システム設定',
-                    isSelected: selectedIndex == 4,
+                    isSelected: selectedIndex == 5,
                     onTap: () => onItemSelected(4),
                   ),
                 ],
@@ -151,6 +158,7 @@ class SidebarItem extends StatelessWidget {
   final String title;
   final bool isSelected;
   final VoidCallback onTap;
+  final String? badge;
 
   const SidebarItem({
     super.key,
@@ -158,6 +166,7 @@ class SidebarItem extends StatelessWidget {
     required this.title,
     required this.isSelected,
     required this.onTap,
+    this.badge,
   });
 
   @override
@@ -169,12 +178,34 @@ class SidebarItem extends StatelessWidget {
           icon,
           color: isSelected ? Theme.of(context).primaryColor : Colors.grey,
         ),
-        title: Text(
-          title,
-          style: TextStyle(
-            color: isSelected ? Theme.of(context).primaryColor : Colors.grey[700],
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-          ),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                title,
+                style: TextStyle(
+                  color: isSelected ? Theme.of(context).primaryColor : Colors.grey[700],
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                ),
+              ),
+            ),
+            if (badge != null)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: isSelected ? Theme.of(context).primaryColor : Colors.grey[400],
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  badge!,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+          ],
         ),
         selected: isSelected,
         selectedTileColor: Theme.of(context).primaryColor.withOpacity(0.1),

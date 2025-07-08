@@ -14,12 +14,15 @@ import json
 import logging
 import os
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Optional
 from functools import wraps
+from collections import defaultdict
+import hashlib
+import uuid
 
 import redis
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, g
 from google.cloud import logging as cloud_logging
 from google.cloud import error_reporting
 from google.cloud import firestore
@@ -39,7 +42,43 @@ logger = logging.getLogger(__name__)
 # Error Reporting クライアント初期化
 error_client = error_reporting.Client()
 
+# Firestore クライアント
+firestore_client = firestore.Client()
+
 app = Flask(__name__)
+
+# レートリミット用のメモリストレージ（本番環境ではRedisを使用）
+rate_limit_storage = defaultdict(list)
+failed_attempts_storage = defaultdict(int)
+
+# 監査ログ設定
+AUDIT_LOG_COLLECTION = 'moderation_logs'
+SECURITY_LOG_COLLECTION = 'security_logs'
+
+# 管理者権限レベル
+ADMIN_LEVELS = {
+    'viewer': 1,
+    'moderator': 2, 
+    'admin': 3,
+    'superadmin': 4
+}
+
+# 操作に必要な権限レベル
+REQUIRED_PERMISSIONS = {
+    'view_reports': 1,
+    'view_audit_logs': 1,
+    'view_users': 1,
+    'moderate_content': 2,
+    'hide_content': 2,
+    'warn_user': 2,
+    'resolve_report': 2,
+    'ban_user': 3,
+    'delete_content': 3,
+    'delete_user': 3,
+    'mass_action': 3,
+    'manage_admins': 4,
+    'system_settings': 4,
+}
 
 # グローバルエラーハンドラー
 @app.errorhandler(Exception)
@@ -94,6 +133,356 @@ FOLLOW_COUNT_KEY = "follow_count:{user_id}"
 TIMELINE_KEY = "timeline:{user_id}"
 GLOBAL_TIMELINE_KEY = "global_timeline"
 TIMELINE_META_KEY = "timeline_meta:{user_id}"
+
+# 🛡️ セキュリティと監査ログ機能
+
+def create_audit_log(
+    action: str,
+    target_type: str, 
+    target_id: str,
+    reason: str,
+    admin_uid: str,
+    admin_email: str = None,
+    notes: str = None,
+    metadata: Dict[str, Any] = None,
+    previous_state: str = None,
+    new_state: str = None,
+    ip_address: str = None,
+    user_agent: str = None
+) -> str:
+    """
+    🛡️ 監査ログの作成（バックエンド主導）
+    
+    全ての管理者操作を確実に記録し、改ざん不可能な監査証跡を作成
+    """
+    try:
+        log_id = str(uuid.uuid4())
+        timestamp = datetime.now(timezone.utc)
+        
+        # 重要度判定
+        severity = calculate_severity(action)
+        requires_approval = check_requires_approval(action)
+        
+        # 操作のハッシュ値生成（改ざん検証用）
+        operation_hash = hashlib.sha256(
+            f"{admin_uid}:{action}:{target_type}:{target_id}:{timestamp.isoformat()}".encode()
+        ).hexdigest()
+        
+        audit_data = {
+            'log_id': log_id,
+            'action': action,
+            'target_type': target_type,
+            'target_id': target_id,
+            'reason': reason,
+            'admin_uid': admin_uid,
+            'admin_email': admin_email,
+            'timestamp': timestamp,
+            'ip_address': ip_address,
+            'user_agent': user_agent,
+            'notes': notes,
+            'metadata': metadata or {},
+            'previous_state': previous_state,
+            'new_state': new_state,
+            'severity': severity,
+            'requires_approval': requires_approval,
+            'operation_hash': operation_hash,
+            'created_at': firestore.SERVER_TIMESTAMP
+        }
+        
+        # Firestoreに確実に保存
+        doc_ref = firestore_client.collection(AUDIT_LOG_COLLECTION).document(log_id)
+        doc_ref.set(audit_data)
+        
+        # Redisにも高速検索用にキャッシュ
+        redis_conn = redis.Redis(connection_pool=redis_client)
+        redis_key = f"audit_log:{log_id}"
+        redis_conn.setex(redis_key, 86400, json.dumps(audit_data, default=str))  # 24時間キャッシュ
+        
+        logger.info(f"Audit log created: {log_id} for action {action} by {admin_uid}")
+        
+        return log_id
+        
+    except Exception as e:
+        logger.error(f"Failed to create audit log: {e}")
+        # 監査ログの記録失敗は重大なエラー
+        error_client.report_exception()
+        raise Exception(f"監査ログの記録に失敗しました: {e}")
+
+def calculate_severity(action: str) -> str:
+    """操作の重要度を計算"""
+    high_risk = ['ban_user', 'delete_user', 'delete_content', 'mass_action', 'manage_admins']
+    medium_risk = ['hide_content', 'moderate_content', 'warn_user', 'resolve_report']
+    
+    if action in high_risk:
+        return 'HIGH'
+    elif action in medium_risk:
+        return 'MEDIUM'
+    else:
+        return 'LOW'
+
+def check_requires_approval(action: str) -> bool:
+    """承認が必要な操作かチェック"""
+    approval_required = ['ban_user', 'delete_user', 'delete_content', 'mass_action']
+    return action in approval_required
+
+def create_security_log(
+    event_type: str,
+    severity: str,
+    description: str,
+    user_uid: str = None,
+    ip_address: str = None,
+    metadata: Dict[str, Any] = None
+) -> str:
+    """
+    🚨 セキュリティログの作成
+    
+    不正アクセス試行、権限昇格攻撃、異常な操作パターンを記録
+    """
+    try:
+        log_id = str(uuid.uuid4())
+        timestamp = datetime.now(timezone.utc)
+        
+        security_data = {
+            'log_id': log_id,
+            'event_type': event_type,
+            'severity': severity,
+            'description': description,
+            'user_uid': user_uid,
+            'ip_address': ip_address,
+            'timestamp': timestamp,
+            'metadata': metadata or {},
+            'created_at': firestore.SERVER_TIMESTAMP
+        }
+        
+        # 重大なセキュリティイベントは即座に保存
+        doc_ref = firestore_client.collection(SECURITY_LOG_COLLECTION).document(log_id)
+        doc_ref.set(security_data)
+        
+        # 高重要度の場合はアラート
+        if severity in ['HIGH', 'CRITICAL']:
+            logger.warning(f"SECURITY ALERT: {event_type} - {description}")
+            # 実際の実装では、ここでSlack/Emailアラートを送信
+        
+        return log_id
+        
+    except Exception as e:
+        logger.error(f"Failed to create security log: {e}")
+        error_client.report_exception()
+        return None
+
+def check_rate_limit(user_id: str, action: str, limit: int = 10, window_seconds: int = 60) -> bool:
+    """
+    🛡️ レートリミットチェック
+    
+    指定時間内の操作回数を制限して総当たり攻撃を防止
+    """
+    now = time.time()
+    key = f"{user_id}:{action}"
+    
+    # 古いエントリを削除
+    rate_limit_storage[key] = [
+        timestamp for timestamp in rate_limit_storage[key] 
+        if now - timestamp < window_seconds
+    ]
+    
+    # 制限チェック
+    if len(rate_limit_storage[key]) >= limit:
+        # レートリミット違反をセキュリティログに記録
+        create_security_log(
+            event_type='rate_limit_exceeded',
+            severity='MEDIUM',
+            description=f'Rate limit exceeded for {action}',
+            user_uid=user_id,
+            ip_address=request.environ.get('REMOTE_ADDR'),
+            metadata={
+                'action': action,
+                'attempts': len(rate_limit_storage[key]),
+                'limit': limit,
+                'window_seconds': window_seconds
+            }
+        )
+        return False
+    
+    # 操作を記録
+    rate_limit_storage[key].append(now)
+    return True
+
+def check_failed_attempts(user_id: str, max_attempts: int = 5) -> bool:
+    """
+    🚨 失敗試行回数チェック
+    
+    連続した認証失敗を監視して不正アクセスを検出
+    """
+    if failed_attempts_storage[user_id] >= max_attempts:
+        create_security_log(
+            event_type='account_locked',
+            severity='HIGH',
+            description=f'Account locked due to {failed_attempts_storage[user_id]} failed attempts',
+            user_uid=user_id,
+            ip_address=request.environ.get('REMOTE_ADDR')
+        )
+        return False
+    return True
+
+def record_failed_attempt(user_id: str):
+    """認証失敗を記録"""
+    failed_attempts_storage[user_id] += 1
+    
+    create_security_log(
+        event_type='authentication_failed',
+        severity='MEDIUM',
+        description=f'Authentication failed (attempt {failed_attempts_storage[user_id]})',
+        user_uid=user_id,
+        ip_address=request.environ.get('REMOTE_ADDR')
+    )
+
+def reset_failed_attempts(user_id: str):
+    """認証成功時に失敗カウントをリセット"""
+    if user_id in failed_attempts_storage:
+        del failed_attempts_storage[user_id]
+
+def require_admin_auth(required_action: str = None):
+    """
+    🛡️ 強化された管理者認証デコレーター
+    
+    認証・認可・レートリミット・監査ログを統合
+    """
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            try:
+                # 1. IP ベースのレートリミット
+                client_ip = request.environ.get('REMOTE_ADDR', 'unknown')
+                if not check_rate_limit(f"ip:{client_ip}", 'admin_api', limit=30, window_seconds=60):
+                    return jsonify({
+                        'error': 'Rate limit exceeded',
+                        'retry_after': 60
+                    }), 429
+                
+                # 2. Authorization ヘッダーチェック
+                auth_header = request.headers.get('Authorization')
+                if not auth_header or not auth_header.startswith('Bearer '):
+                    create_security_log(
+                        event_type='unauthorized_access_attempt',
+                        severity='MEDIUM',
+                        description='Missing or invalid Authorization header',
+                        ip_address=client_ip
+                    )
+                    return jsonify({'error': 'Unauthorized'}), 401
+                
+                # 3. Firebase ID Token 検証
+                token = auth_header.split('Bearer ')[1]
+                try:
+                    decoded_token = auth.verify_id_token(token)
+                    user_uid = decoded_token['uid']
+                    user_email = decoded_token.get('email')
+                    user_role = decoded_token.get('role')
+                except Exception as e:
+                    record_failed_attempt(f"ip:{client_ip}")
+                    create_security_log(
+                        event_type='invalid_token',
+                        severity='HIGH',
+                        description=f'Invalid Firebase token: {str(e)}',
+                        ip_address=client_ip
+                    )
+                    return jsonify({'error': 'Invalid token'}), 401
+                
+                # 4. 失敗試行回数チェック
+                if not check_failed_attempts(user_uid):
+                    return jsonify({'error': 'Account temporarily locked'}), 423
+                
+                # 5. 管理者権限チェック
+                if not user_role or user_role not in ADMIN_LEVELS:
+                    create_security_log(
+                        event_type='unauthorized_admin_access',
+                        severity='HIGH',
+                        description='Non-admin user attempted admin operation',
+                        user_uid=user_uid,
+                        ip_address=client_ip,
+                        metadata={'user_role': user_role}
+                    )
+                    return jsonify({'error': 'Admin privileges required'}), 403
+                
+                # 6. 特定操作の権限チェック
+                if required_action:
+                    user_level = ADMIN_LEVELS.get(user_role, 0)
+                    required_level = REQUIRED_PERMISSIONS.get(required_action, 999)
+                    
+                    if user_level < required_level:
+                        create_security_log(
+                            event_type='insufficient_permissions',
+                            severity='HIGH',
+                            description=f'Insufficient permissions for {required_action}',
+                            user_uid=user_uid,
+                            ip_address=client_ip,
+                            metadata={
+                                'user_role': user_role,
+                                'user_level': user_level,
+                                'required_action': required_action,
+                                'required_level': required_level
+                            }
+                        )
+                        return jsonify({
+                            'error': 'Insufficient permissions',
+                            'required_action': required_action
+                        }), 403
+                
+                # 7. 営業時間チェック（高リスク操作のみ）
+                high_risk_actions = ['ban_user', 'delete_user', 'delete_content', 'mass_action']
+                if required_action in high_risk_actions:
+                    current_hour = datetime.now().hour
+                    if current_hour < 6 or current_hour > 22:
+                        create_security_log(
+                            event_type='business_hours_violation',
+                            severity='MEDIUM',
+                            description=f'High-risk operation {required_action} attempted outside business hours',
+                            user_uid=user_uid,
+                            ip_address=client_ip
+                        )
+                        return jsonify({
+                            'error': 'High-risk operations only allowed during business hours (6:00-22:00)'
+                        }), 403
+                
+                # 8. 認証成功時の処理
+                reset_failed_attempts(user_uid)
+                
+                # 9. リクエスト情報をグローバル変数に設定
+                g.admin_uid = user_uid
+                g.admin_email = user_email
+                g.admin_role = user_role
+                g.client_ip = client_ip
+                g.user_agent = request.headers.get('User-Agent', 'unknown')
+                
+                # 10. API アクセスログを記録
+                create_audit_log(
+                    action=f'api_access_{required_action or f.name}',
+                    target_type='api',
+                    target_id=request.endpoint or f.name,
+                    reason='API access',
+                    admin_uid=user_uid,
+                    admin_email=user_email,
+                    ip_address=client_ip,
+                    user_agent=g.user_agent,
+                    metadata={
+                        'method': request.method,
+                        'path': request.path,
+                        'query_params': dict(request.args),
+                        'user_role': user_role
+                    }
+                )
+                
+                return f(*args, **kwargs)
+                
+            except Exception as e:
+                logger.error(f"Admin auth error: {e}")
+                error_client.report_exception()
+                return jsonify({
+                    'error': 'Authentication system error',
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                }), 500
+        
+        return decorated_function
+    return decorator
 
 
 class AnalyticsProcessor:
@@ -524,97 +913,384 @@ processor = AnalyticsProcessor()
 db = firestore.Client()
 
 
-def require_admin_auth(required_role='moderator'):
-    """
-    管理者認証デコレータ
-    
-    Args:
-        required_role: 必要な権限 ('moderator' or 'superadmin')
-    """
-    def decorator(f):
-        @wraps(f)
-        def decorated_function(*args, **kwargs):
-            try:
-                # Authorizationヘッダーからトークンを取得
-                auth_header = request.headers.get('Authorization')
-                if not auth_header or not auth_header.startswith('Bearer '):
-                    logger.warning('Missing or invalid Authorization header')
-                    return jsonify({'error': 'Unauthorized - Missing token'}), 401
-                
-                token = auth_header.split(' ')[1]
-                
-                # IDトークンを検証
-                decoded_token = auth.verify_id_token(token)
-                user_id = decoded_token['uid']
-                
-                # カスタムクレームからロールを取得
-                user_role = decoded_token.get('role')
-                
-                # 権限チェック
-                if not user_role:
-                    logger.warning(f'User {user_id} has no role assigned')
-                    return jsonify({'error': 'Forbidden - No role assigned'}), 403
-                
-                if required_role == 'superadmin' and user_role != 'superadmin':
-                    logger.warning(f'User {user_id} with role {user_role} attempted superadmin operation')
-                    return jsonify({'error': 'Forbidden - Insufficient privileges'}), 403
-                
-                if user_role not in ['moderator', 'superadmin']:
-                    logger.warning(f'User {user_id} with invalid role {user_role} attempted admin operation')
-                    return jsonify({'error': 'Forbidden - Invalid role'}), 403
-                
-                # リクエストにユーザー情報を追加
-                request.admin_user_id = user_id
-                request.admin_user_role = user_role
-                
-                logger.info(f'Admin operation authorized for user {user_id} with role {user_role}')
-                
-                return f(*args, **kwargs)
-                
-            except auth.InvalidIdTokenError:
-                logger.warning('Invalid ID token provided')
-                return jsonify({'error': 'Unauthorized - Invalid token'}), 401
-            except Exception as e:
-                logger.error(f'Authentication error: {e}')
-                return jsonify({'error': 'Authentication failed'}), 500
-        
-        return decorated_function
-    return decorator
+# 🛡️ セキュリティ強化された管理者APIエンドポイント
 
-
-def log_admin_operation(operation: str, target_id: str, target_type: str, details: Dict[str, Any]):
+@app.route('/admin/contents/moderate', methods=['POST'])
+@require_admin_auth('moderate_content')
+def moderate_content():
     """
-    管理者操作の監査ログを記録
-    
-    Args:
-        operation: 操作種別 ('status_change', 'user_search', etc.)
-        target_id: 対象ID
-        target_type: 対象タイプ ('countdown', 'comment', 'user')
-        details: 詳細情報
+    🛡️ コンテンツモデレーション（バックエンド主導の監査ログ）
     """
     try:
-        log_data = {
-            'moderatorId': request.admin_user_id,
-            'moderatorRole': request.admin_user_role,
-            'operation': operation,
-            'targetId': target_id,
-            'targetType': target_type,
-            'details': details,
-            'timestamp': firestore.SERVER_TIMESTAMP,
-            'ipAddress': request.remote_addr,
-            'userAgent': request.headers.get('User-Agent', '')
-        }
+        data = request.get_json()
+        content_id = data.get('contentId')
+        content_type = data.get('contentType')
+        new_status = data.get('newStatus')
+        reason = data.get('reason')
+        notes = data.get('notes')
         
-        db.collection('moderation_logs').add(log_data)
-        logger.info(f'Admin operation logged: {operation} on {target_type} {target_id} by {request.admin_user_id}')
+        if not all([content_id, content_type, new_status, reason]):
+            return jsonify({'error': 'Missing required fields'}), 400
+        
+        # 現在の状態を取得
+        if content_type == 'countdown':
+            doc_ref = firestore_client.collection('counts').document(content_id)
+        elif content_type == 'comment':
+            doc_ref = firestore_client.collection('comments').document(content_id)
+        else:
+            return jsonify({'error': 'Invalid content type'}), 400
+        
+        doc = doc_ref.get()
+        if not doc.exists:
+            return jsonify({'error': 'Content not found'}), 404
+        
+        previous_state = doc.to_dict().get('status', 'unknown')
+        
+        # 🛡️ バックエンドで監査ログを記録（操作前）
+        log_id = create_audit_log(
+            action='moderate_content',
+            target_type=content_type,
+            target_id=content_id,
+            reason=reason,
+            admin_uid=g.admin_uid,
+            admin_email=g.admin_email,
+            notes=notes,
+            previous_state=previous_state,
+            new_state=new_status,
+            ip_address=g.client_ip,
+            user_agent=g.user_agent,
+            metadata={
+                'moderation_type': 'content_status_change',
+                'action_source': 'admin_api'
+            }
+        )
+        
+        # コンテンツの状態を更新
+        doc_ref.update({
+            'status': new_status,
+            'moderated_at': firestore.SERVER_TIMESTAMP,
+            'moderated_by': g.admin_uid,
+            'moderation_reason': reason
+        })
+        
+        # 成功ログを記録
+        create_audit_log(
+            action='moderate_content_completed',
+            target_type=content_type,
+            target_id=content_id,
+            reason='Moderation completed successfully',
+            admin_uid=g.admin_uid,
+            admin_email=g.admin_email,
+            metadata={
+                'original_log_id': log_id,
+                'operation_result': 'success'
+            }
+        )
+        
+        return jsonify({
+            'success': True,
+            'audit_log_id': log_id,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
         
     except Exception as e:
-        logger.error(f'Failed to log admin operation: {e}')
-        report_critical_error(e, 'admin_operation_logging_failed', {
-            'operation': operation,
-            'target_id': target_id,
-            'target_type': target_type
+        logger.error(f"Content moderation failed: {e}")
+        # 失敗ログを記録
+        create_audit_log(
+            action='moderate_content_failed',
+            target_type=data.get('contentType', 'unknown'),
+            target_id=data.get('contentId', 'unknown'),
+            reason=f'Operation failed: {str(e)}',
+            admin_uid=g.admin_uid,
+            admin_email=g.admin_email,
+            metadata={'error': str(e)}
+        )
+        return jsonify({'error': 'Moderation failed'}), 500
+
+@app.route('/admin/users/ban', methods=['POST'])
+@require_admin_auth('ban_user')
+def ban_user():
+    """
+    🛡️ ユーザーBAN（高リスク操作・完全監査）
+    """
+    try:
+        data = request.get_json()
+        user_id = data.get('userId')
+        reason = data.get('reason')
+        notes = data.get('notes')
+        duration_days = data.get('durationDays')
+        
+        if not all([user_id, reason]):
+            return jsonify({'error': 'Missing required fields'}), 400
+        
+        # ユーザー情報を取得
+        try:
+            user_record = auth.get_user(user_id)
+            previous_state = f"disabled: {user_record.disabled}"
+        except auth.UserNotFoundError:
+            return jsonify({'error': 'User not found'}), 404
+        
+        # 🛡️ 高リスク操作の監査ログ記録
+        log_id = create_audit_log(
+            action='ban_user',
+            target_type='user',
+            target_id=user_id,
+            reason=reason,
+            admin_uid=g.admin_uid,
+            admin_email=g.admin_email,
+            notes=notes,
+            previous_state=previous_state,
+            new_state=f"banned for {duration_days} days" if duration_days else "permanently banned",
+            ip_address=g.client_ip,
+            user_agent=g.user_agent,
+            metadata={
+                'ban_duration_days': duration_days,
+                'severity': 'HIGH',
+                'requires_approval': True
+            }
+        )
+        
+        # ユーザーアカウントを無効化
+        auth.update_user(user_id, disabled=True)
+        
+        # BANレコードをFirestoreに保存
+        ban_data = {
+            'user_id': user_id,
+            'banned_by': g.admin_uid,
+            'reason': reason,
+            'notes': notes,
+            'banned_at': firestore.SERVER_TIMESTAMP,
+            'duration_days': duration_days,
+            'audit_log_id': log_id
+        }
+        
+        if duration_days:
+            ban_data['expires_at'] = datetime.now(timezone.utc) + timedelta(days=duration_days)
+        
+        firestore_client.collection('user_bans').document(user_id).set(ban_data)
+        
+        # 成功ログを記録
+        create_audit_log(
+            action='ban_user_completed',
+            target_type='user',
+            target_id=user_id,
+            reason='User ban completed successfully',
+            admin_uid=g.admin_uid,
+            admin_email=g.admin_email,
+            metadata={
+                'original_log_id': log_id,
+                'operation_result': 'success'
+            }
+        )
+        
+        return jsonify({
+            'success': True,
+            'audit_log_id': log_id,
+            'timestamp': datetime.now(timezone.utc).isoformat()
         })
+        
+    except Exception as e:
+        logger.error(f"User ban failed: {e}")
+        create_audit_log(
+            action='ban_user_failed',
+            target_type='user',
+            target_id=data.get('userId', 'unknown'),
+            reason=f'Ban operation failed: {str(e)}',
+            admin_uid=g.admin_uid,
+            admin_email=g.admin_email,
+            metadata={'error': str(e)}
+        )
+        return jsonify({'error': 'Ban operation failed'}), 500
+
+@app.route('/admin/logs', methods=['GET'])
+@require_admin_auth('view_audit_logs')
+def get_audit_logs():
+    """
+    🛡️ 監査ログ取得（フィルタリング・ページネーション対応）
+    """
+    try:
+        # フィルターパラメータ
+        admin_uid = request.args.get('admin_uid')
+        target_type = request.args.get('target_type')
+        target_id = request.args.get('target_id')
+        action = request.args.get('action')
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        limit = min(int(request.args.get('limit', 50)), 100)  # 最大100件
+        last_document_id = request.args.get('last_document_id')
+        
+        # アクセスログを記録
+        create_audit_log(
+            action='view_audit_logs',
+            target_type='audit_system',
+            target_id='log_query',
+            reason='Audit log access',
+            admin_uid=g.admin_uid,
+            admin_email=g.admin_email,
+            metadata={
+                'query_filters': {
+                    'admin_uid': admin_uid,
+                    'target_type': target_type,
+                    'action': action,
+                    'limit': limit
+                }
+            }
+        )
+        
+        # Firestoreクエリを構築
+        query = firestore_client.collection(AUDIT_LOG_COLLECTION)
+        
+        # フィルター適用
+        if admin_uid:
+            query = query.where('admin_uid', '==', admin_uid)
+        if target_type:
+            query = query.where('target_type', '==', target_type)
+        if action:
+            query = query.where('action', '==', action)
+        if start_date:
+            start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+            query = query.where('timestamp', '>=', start_dt)
+        if end_date:
+            end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+            query = query.where('timestamp', '<=', end_dt)
+        
+        # ページネーション
+        if last_document_id:
+            last_doc = firestore_client.collection(AUDIT_LOG_COLLECTION).document(last_document_id).get()
+            if last_doc.exists:
+                query = query.start_after(last_doc)
+        
+        # 実行
+        query = query.order_by('timestamp', direction=firestore.Query.DESCENDING).limit(limit)
+        docs = query.stream()
+        
+        logs = []
+        for doc in docs:
+            log_data = doc.to_dict()
+            log_data['id'] = doc.id
+            # Timestampを文字列に変換
+            if 'timestamp' in log_data:
+                log_data['timestamp'] = log_data['timestamp'].isoformat()
+            logs.append(log_data)
+        
+        return jsonify({
+            'success': True,
+            'logs': logs,
+            'count': len(logs),
+            'has_more': len(logs) == limit
+        })
+        
+    except Exception as e:
+        logger.error(f"Audit log retrieval failed: {e}")
+        return jsonify({'error': 'Failed to retrieve audit logs'}), 500
+
+@app.route('/admin/activity-stats', methods=['GET'])
+@require_admin_auth('view_audit_logs')
+def get_admin_activity_stats():
+    """
+    📊 管理者活動統計取得
+    """
+    try:
+        # 期間パラメータ
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        admin_uid = request.args.get('admin_uid')
+        
+        # デフォルトは過去30日
+        if not end_date:
+            end_date = datetime.now(timezone.utc)
+        else:
+            end_date = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+        
+        if not start_date:
+            start_date = end_date - timedelta(days=30)
+        else:
+            start_date = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+        
+        # 統計クエリ
+        query = firestore_client.collection(AUDIT_LOG_COLLECTION).where(
+            'timestamp', '>=', start_date
+        ).where(
+            'timestamp', '<=', end_date
+        )
+        
+        if admin_uid:
+            query = query.where('admin_uid', '==', admin_uid)
+        
+        docs = list(query.stream())
+        
+        # 統計計算
+        stats = {
+            'total_actions': len(docs),
+            'high_risk_actions': 0,
+            'user_bans': 0,
+            'content_deletions': 0,
+            'actions_by_admin': {},
+            'actions_by_type': {},
+            'recent_actions': []
+        }
+        
+        for doc in docs:
+            data = doc.to_dict()
+            action = data.get('action', 'unknown')
+            admin_email = data.get('admin_email', 'unknown')
+            severity = data.get('severity', 'LOW')
+            
+            # 統計集計
+            if severity == 'HIGH':
+                stats['high_risk_actions'] += 1
+            if 'ban_user' in action:
+                stats['user_bans'] += 1
+            if 'delete_content' in action:
+                stats['content_deletions'] += 1
+            
+            # 管理者別集計
+            if admin_email not in stats['actions_by_admin']:
+                stats['actions_by_admin'][admin_email] = 0
+            stats['actions_by_admin'][admin_email] += 1
+            
+            # アクション別集計
+            if action not in stats['actions_by_type']:
+                stats['actions_by_type'][action] = 0
+            stats['actions_by_type'][action] += 1
+        
+        # トップ管理者（上位5名）
+        top_moderators = sorted(
+            stats['actions_by_admin'].items(),
+            key=lambda x: x[1],
+            reverse=True
+        )[:5]
+        
+        stats['top_moderators'] = [
+            {'admin_email': email, 'action_count': count}
+            for email, count in top_moderators
+        ]
+        
+        # 最近のアクション（上位10件）
+        recent_docs = sorted(docs, key=lambda x: x.to_dict().get('timestamp', datetime.min), reverse=True)[:10]
+        stats['recent_actions'] = [
+            {
+                'action': doc.to_dict().get('action'),
+                'target_type': doc.to_dict().get('target_type'),
+                'target_id': doc.to_dict().get('target_id'),
+                'timestamp': doc.to_dict().get('timestamp').isoformat() if doc.to_dict().get('timestamp') else None,
+                'severity': doc.to_dict().get('severity')
+            }
+            for doc in recent_docs
+        ]
+        
+        return jsonify({
+            'success': True,
+            'stats': stats,
+            'period': {
+                'start_date': start_date.isoformat(),
+                'end_date': end_date.isoformat()
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Admin activity stats failed: {e}")
+        return jsonify({'error': 'Failed to retrieve activity stats'}), 500
 
 
 def report_critical_error(error: Exception, context: str, additional_data: Dict[str, Any] = None):

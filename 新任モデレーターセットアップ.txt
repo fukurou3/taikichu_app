@@ -1,0 +1,10 @@
+ 新任モデレーター向け：初期セットアップ
+
+アカウント作成: Firebase Authenticationでメール/パスワードアカウントを作成する。
+
+権限付与: superadminに依頼し、setup_admin_roles.pyスクリプトで自身のUIDにmoderatorロールを付与してもらう。
+
+Bash
+
+python admin_scripts/setup_admin_roles.py set-role <あなたのUID> moderator
+管理画面ログイン: https://admin.taikichu.app （※デプロイ後のURL）からログインし、ダッシュボードが表示されることを確認する。

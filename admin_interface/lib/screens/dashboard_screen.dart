@@ -3,9 +3,11 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/admin_api_service.dart';
 import '../widgets/sidebar.dart';
+import 'admin_dashboard_screen.dart';
 import 'content_moderation_screen.dart';
 import 'user_search_screen.dart';
 import 'reports_screen.dart';
+import 'audit_logs_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -18,10 +20,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
   int _selectedIndex = 0;
   
   static const List<Widget> _screens = [
-    DashboardHomeScreen(),
+    AdminDashboardScreen(),
     ReportsScreen(),
     ContentModerationScreen(),
     UserSearchScreen(),
+    AuditLogsScreen(),
   ];
 
   @override
