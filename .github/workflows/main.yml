@@ -1,0 +1,177 @@
+# GitHub Actions CI/CD パイプライン for Taikichu App
+
+name: Taikichu CI/CD
+
+# ワークフローのトリガー設定
+on:
+  # mainブランチへのpushやpull_requestではテストのみ実行
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+  # 【変更点 ①】手動実行のためのトリガーを追加
+  workflow_dispatch:
+
+jobs:
+  # ------------------------------------
+  # 1. ビルドとテストを実行するジョブ
+  # ------------------------------------
+  build_and_test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      # ステップ1: コードをチェックアウト
+      - name: ⬇️ Checkout Repository
+        uses: actions/checkout@v4
+
+      # ステップ2: Flutter環境をセットアップ
+      - name: 🐦 Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.5' # プロジェクトのSDKバージョン ^3.8.1 に対応
+          channel: 'stable'
+          cache: true
+
+      # ステップ3: 依存関係をインストール
+      - name: 📦 Install Dependencies
+        run: flutter pub get
+
+      # ステップ4: 静的コード解析を実行
+      # これにより、コードの品質を一定に保つ
+      - name: 🔬 Analyze Project
+        run: flutter analyze
+
+      # ステップ5: 全てのテストを実行
+      # これにより、変更が既存の機能を壊していないことを保証する
+      - name: 🧪 Run Tests
+        run: flutter test --reporter=expanded
+
+      # ステップ6: 統合テストを実行
+      - name: 🧪 Run Integration Tests
+        run: flutter test integration_test/
+
+  # ---------------------------------------------------
+  # 2. Cloud Functions のビルドとテスト
+  # ---------------------------------------------------
+  functions_test:
+    name: Functions Build & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: ⬇️ Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: functions/package-lock.json
+
+      - name: 📦 Install Functions Dependencies
+        run: |
+          cd functions
+          npm ci
+
+      - name: 🔨 Build Functions
+        run: |
+          cd functions
+          npm run build
+
+      - name: 🧪 Test Functions
+        run: |
+          cd functions
+          npm test
+
+  # ---------------------------------------------------
+  # 3. Cloud Run Analytics Service のビルドとテスト
+  # ---------------------------------------------------
+  analytics_service_test:
+    name: Analytics Service Build & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: ⬇️ Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 📦 Install Analytics Service Dependencies
+        run: |
+          cd analytics-service
+          pip install -r requirements.txt
+
+      - name: 🧪 Test Analytics Service
+        run: |
+          cd analytics-service
+          python -m pytest --verbose
+
+  # ---------------------------------------------------
+  # 4. アプリをデプロイするジョブ（全テスト成功後に実行）
+  # ---------------------------------------------------
+  deploy:
+    name: Deploy to Production
+    needs: [build_and_test, functions_test, analytics_service_test]
+    runs-on: ubuntu-latest
+    
+    # 【変更点 ②】手動実行された場合のみ、このジョブを動かすように条件を変更
+    if: github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: ⬇️ Checkout Repository
+        uses: actions/checkout@v4
+
+      # Firebase Functions のデプロイ
+      - name: 🟢 Setup Node.js for Functions
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: functions/package-lock.json
+
+      - name: 📦 Install Functions Dependencies
+        run: |
+          cd functions
+          npm ci
+
+      - name: 🔨 Build Functions
+        run: |
+          cd functions
+          npm run build
+
+      - name: 🚀 Deploy Firebase Functions
+        uses: w9jds/firebase-action@master
+        with:
+          args: deploy --only functions
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+
+      # Cloud Run Analytics Service のデプロイ
+      - name: 🔑 Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: 🐳 Configure Docker to use gcloud
+        run: gcloud auth configure-docker asia-northeast1-docker.pkg.dev
+
+      - name: 🚀 Deploy Analytics Service to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: 'analytics-service'
+          region: 'asia-northeast1'
+          source: './analytics-service'
+          flags: '--memory=1Gi --cpu=1 --concurrency=100 --max-instances=10'
+
+      # デプロイ完了通知
+      - name: ✅ Deployment Success
+        run: |
+          echo "🎉 全てのサービスが正常にデプロイされました"
+          echo "- Firebase Functions: 統一パイプライン対応版"
+          echo "- Cloud Run Analytics Service: 高速分析エンジン"
+          echo "- 信頼性・パフォーマンス・コスト効率を同時実現"

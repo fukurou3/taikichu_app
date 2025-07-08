@@ -48,7 +48,14 @@
       "Bash(--cpu=1000m )",
       "Bash(--max-instances=10)",
       "Bash(gcloud run services describe:*)",
-      "Bash(gcloud run deploy:*)"
+      "Bash(gcloud run deploy:*)",
+      "Bash(firebase list:*)",
+      "Bash(gcloud billing accounts list:*)",
+      "Bash(gcloud config configurations:*)",
+      "Bash(ss:*)",
+      "Bash(systemctl:*)",
+      "Bash(gcloud run services update:*)",
+      "Bash(gcloud pubsub subscriptions delete:*)"
     ],
     "deny": []
   }
