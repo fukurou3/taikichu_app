@@ -1,0 +1,95 @@
+{
+  "phase": "0",
+  "version": "2.1",
+  "description": "MAU 1万人 × 月額 ≤ ¥7,000 対応設定",
+  
+  "limits": {
+    "mau": 10000,
+    "dailyCost": 450,
+    "monthlyCost": 7000,
+    "firestoreReadsPerDay": 40000000,
+    "requestsPerMinute": 30
+  },
+  
+  "databases": {
+    "primary": "firestore",
+    "collections": {
+      "posts": "main content",
+      "users": "user profiles", 
+      "inbox": "timeline fanout",
+      "follows": "follow relationships",
+      "likes": "like interactions",
+      "comments": "comment data",
+      "daily_stats": "aggregated metrics",
+      "alerts": "cost/usage alerts"
+    }
+  },
+  
+  "architecture": {
+    "type": "monolith",
+    "fanout": "write-time",
+    "caching": "application-level",
+    "timeline": "inbox-pattern"
+  },
+  
+  "cloudRun": {
+    "minInstances": 1,
+    "maxInstances": 10,
+    "concurrency": 40,
+    "cpu": "1000m",
+    "memory": "512Mi",
+    "timeoutSeconds": 300
+  },
+  
+  "monitoring": {
+    "logLevel": "ERROR",
+    "retention": "7d",
+    "sampling": 0.001,
+    "alerts": {
+      "dailyCostThreshold": 450,
+      "firestoreReadsThreshold": 32000000
+    }
+  },
+  
+  "features": {
+    "enabled": [
+      "firestore-fanout",
+      "daily-aggregation", 
+      "cost-monitoring",
+      "basic-timeline",
+      "simple-search"
+    ],
+    "disabled": [
+      "redis-cache",
+      "analytics-service",
+      "microservices",
+      "admin-interface",
+      "realtime-analytics"
+    ]
+  },
+  
+  "performance": {
+    "targets": {
+      "timelineP95": "600ms",
+      "timelineP90": "400ms", 
+      "writeOpsP95": "150ms",
+      "loginP95": "800ms"
+    }
+  },
+  
+  "triggers": {
+    "phase1Migration": {
+      "mau": 8000,
+      "firestoreReads": "35M/day for 3 days",
+      "p95Latency": "780ms for 1 week"
+    },
+    "costReduction": {
+      "dailyCost": 450,
+      "monthlyCost": 7000
+    },
+    "projectTermination": {
+      "dauMauRatio": 0.3,
+      "consecutiveLossMonths": 3
+    }
+  }
+}

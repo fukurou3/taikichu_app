@@ -1,0 +1,97 @@
+# Cloud Run Configuration for Phase0 v2.1
+# Optimized for MAU 1万人 × 月額 ≤ ¥7,000
+
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: taikichu-app
+  annotations:
+    # Cloud Run設定
+    run.googleapis.com/ingress: all
+    run.googleapis.com/execution-environment: gen2
+    run.googleapis.com/cpu-throttling: "true"
+spec:
+  template:
+    metadata:
+      annotations:
+        # Phase0 v2.1 最適化設定
+        autoscaling.knative.dev/minScale: "1"        # コールドスタート排除
+        autoscaling.knative.dev/maxScale: "10"       # スケール制限
+        run.googleapis.com/execution-environment: gen2
+        run.googleapis.com/startup-cpu-boost: "true"
+        run.googleapis.com/cpu-throttling: "true"
+    spec:
+      # 同時実行数（Phase0 v2.1仕様）
+      containerConcurrency: 40
+      
+      # タイムアウト設定
+      timeoutSeconds: 300
+      
+      containers:
+      - image: gcr.io/PROJECT_ID/taikichu-app:latest
+        
+        # リソース制限（Phase0 v2.1仕様）
+        resources:
+          limits:
+            cpu: 1000m      # 1 vCPU
+            memory: 512Mi   # 512 MiB
+          requests:
+            cpu: 500m       # 0.5 vCPU (アイドル時)
+            memory: 256Mi   # 256 MiB (アイドル時)
+        
+        # 環境変数
+        env:
+        - name: FIRESTORE_PROJECT_ID
+          value: "taikichu-app-c8dcd"
+        - name: NODE_ENV
+          value: "production"
+        - name: LOG_LEVEL
+          value: "ERROR"  # Phase0: ERROR onlyログ
+        - name: MAX_REQUESTS_PER_MINUTE
+          value: "30"     # レート制限
+        - name: PHASE
+          value: "0"      # Phase0識別
+        
+        # ヘルスチェック設定
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 60
+          timeoutSeconds: 10
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 2
+        
+        # 起動プローブ
+        startupProbe:
+          httpGet:
+            path: /startup
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 30
+        
+        ports:
+        - containerPort: 8080
+          name: http1
+
+---
+# Traffic allocation (100% to latest revision)
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: taikichu-app
+spec:
+  traffic:
+  - percent: 100
+    latestRevision: true

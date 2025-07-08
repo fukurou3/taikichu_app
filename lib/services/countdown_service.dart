@@ -1,59 +1,36 @@
+// Simplified Countdown Service for Phase0 v2.1
+// Direct Firestore operations with Write Fan-out
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/countdown.dart';
-import 'unified_analytics_service.dart';
+import 'simple_firestore_service.dart';
 
 class CountdownService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  static const String _collection = 'counts';
 
+  /// カウントダウンストリーム取得（近日中のイベント）
   static Stream<List<Countdown>> getCountdownsStream() {
     return _firestore
-        .collection(_collection)
+        .collection('posts')
+        .where('status', isEqualTo: 'visible')
+        .where('eventDate', isGreaterThan: DateTime.now())
         .orderBy('eventDate', descending: false)
+        .limit(100)
         .snapshots()
         .map((snapshot) {
       return snapshot.docs.map((doc) {
-        return Countdown.fromFirestore(doc, null);
+        return Countdown.fromFirestore(doc);
       }).toList();
     });
   }
 
-
-  /// 【統一パイプライン】カウントダウン作成（Firestore書き込み + ファンアウト）
+  /// カウントダウン作成（Write Fan-out付き）
   static Future<bool> createCountdownEvent(Countdown countdown) async {
     try {
-      // 1. Firestoreにドキュメントを作成
-      final docRef = await _firestore.collection(_collection).add({
-        'eventName': countdown.eventName,
-        'description': countdown.description,
-        'eventDate': Timestamp.fromDate(countdown.eventDate),
-        'category': countdown.category,
-        'creatorId': countdown.creatorId,
-        'hashtags': countdown.hashtags,
-        'imageUrl': countdown.imageUrl,
-        'status': 'visible',
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-
-      final countdownId = docRef.id;
-      print('CountdownService - Created countdown with ID: $countdownId');
-
-      // 2. ファンアウト処理：統一パイプライン経由でカウントダウン作成イベント送信
-      final eventSuccess = await UnifiedAnalyticsService.sendCountdownCreatedEvent(
-        countdownId,
-        countdownData: {
-          'eventName': countdown.eventName,
-          'eventDate': countdown.eventDate.toIso8601String(),
-          'creatorId': countdown.creatorId,
-          'category': countdown.category,
-        },
-      );
-
-      if (!eventSuccess) {
-        print('CountdownService - Warning: Event sending failed, but document created');
-      }
-
+      // SimpleFirestoreService経由で作成（Fan-out実行）
+      await SimpleFirestoreService.createPost(countdown);
+      
+      print('CountdownService - Created countdown: ${countdown.id}');
       return true;
     } catch (e) {
       print('CountdownService - Error creating countdown: $e');
@@ -61,18 +38,94 @@ class CountdownService {
     }
   }
 
-
-  /// 【統一パイプライン】カウントダウン削除イベント送信
-  static Future<bool> deleteCountdownEvent(String countdownId) async {
+  /// カテゴリ別のカウントダウン取得
+  static Future<List<Countdown>> getCountdownsByCategory(String category, {int limit = 20}) async {
     try {
-      return await UnifiedAnalyticsService.sendEvent(
-        type: 'countdown_deleted',
-        countdownId: countdownId,
-        metadata: {'reason': 'user_request'},
-      );
+      final snapshot = await _firestore
+          .collection('posts')
+          .where('category', isEqualTo: category)
+          .where('status', isEqualTo: 'visible')
+          .where('eventDate', isGreaterThan: DateTime.now())
+          .orderBy('eventDate', descending: false)
+          .limit(limit)
+          .get();
+
+      return snapshot.docs.map((doc) => Countdown.fromFirestore(doc)).toList();
     } catch (e) {
-      print('CountdownService - Error deleting countdown event: $e');
+      print('CountdownService - Error getting countdowns by category: $e');
+      return [];
+    }
+  }
+
+  /// 人気のカウントダウン取得
+  static Future<List<Countdown>> getPopularCountdowns({int limit = 20}) async {
+    try {
+      final snapshot = await _firestore
+          .collection('posts')
+          .where('status', isEqualTo: 'visible')
+          .where('eventDate', isGreaterThan: DateTime.now())
+          .orderBy('likesCount', descending: true)
+          .limit(limit)
+          .get();
+
+      return snapshot.docs.map((doc) => Countdown.fromFirestore(doc)).toList();
+    } catch (e) {
+      print('CountdownService - Error getting popular countdowns: $e');
+      return [];
+    }
+  }
+
+  /// カウントダウン検索
+  static Future<List<Countdown>> searchCountdowns(String query, {int limit = 20}) async {
+    return await SimpleFirestoreService.searchPosts(query, limit: limit);
+  }
+
+  /// 特定のカウントダウン取得
+  static Future<Countdown?> getCountdown(String countdownId) async {
+    try {
+      final doc = await _firestore.collection('posts').doc(countdownId).get();
+      
+      if (doc.exists) {
+        return Countdown.fromFirestore(doc);
+      }
+      return null;
+    } catch (e) {
+      print('CountdownService - Error getting countdown: $e');
+      return null;
+    }
+  }
+
+  /// カウントダウン削除（ソフト削除）
+  static Future<bool> deleteCountdown(String countdownId) async {
+    try {
+      await _firestore.collection('posts').doc(countdownId).update({
+        'status': 'deleted_by_user',
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      print('CountdownService - Deleted countdown: $countdownId');
+      return true;
+    } catch (e) {
+      print('CountdownService - Error deleting countdown: $e');
       return false;
+    }
+  }
+
+  /// 期限切れのカウントダウン取得（参考用）
+  static Future<List<Countdown>> getExpiredCountdowns({int limit = 20}) async {
+    try {
+      final snapshot = await _firestore
+          .collection('posts')
+          .where('status', isEqualTo: 'visible')
+          .where('eventDate', isLessThan: DateTime.now())
+          .orderBy('eventDate', descending: true)
+          .limit(limit)
+          .get();
+
+      return snapshot.docs.map((doc) => Countdown.fromFirestore(doc)).toList();
+    } catch (e) {
+      print('CountdownService - Error getting expired countdowns: $e');
+      return [];
     }
   }
 }

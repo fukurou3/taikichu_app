@@ -1,0 +1,67 @@
+# Dockerfile for Phase0 v2.1 - Optimized for cost and simplicity
+# Target: MAU 1万人 × 月額 ≤ ¥7,000
+
+# マルチステージビルド（イメージサイズ最適化）
+FROM node:18-alpine AS builder
+
+# 作業ディレクトリ設定
+WORKDIR /app
+
+# パッケージファイルコピー
+COPY package*.json ./
+COPY functions/package*.json ./functions/
+
+# 依存関係インストール（本番用のみ）
+RUN npm ci --only=production && \
+    cd functions && npm ci --only=production
+
+# ソースコードコピー
+COPY . .
+
+# Functions ビルド
+WORKDIR /app/functions
+RUN npm run build
+
+# 本番用軽量イメージ
+FROM node:18-alpine AS runtime
+
+# セキュリティ: 非rootユーザー作成
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nextjs -u 1001
+
+# 作業ディレクトリ設定
+WORKDIR /app
+
+# 必要なファイルのみコピー
+COPY --from=builder --chown=nextjs:nodejs /app/functions/lib ./functions/lib
+COPY --from=builder --chown=nextjs:nodejs /app/functions/package*.json ./functions/
+COPY --from=builder --chown=nextjs:nodejs /app/functions/node_modules ./functions/node_modules
+
+# アプリケーション用ディレクトリ作成
+RUN mkdir -p /app/public && chown nextjs:nodejs /app/public
+
+# Phase0 設定ファイル
+COPY --chown=nextjs:nodejs phase0-config.json ./
+
+# 起動スクリプト
+COPY --chown=nextjs:nodejs start-phase0.sh ./
+RUN chmod +x start-phase0.sh
+
+# 非rootユーザーに切り替え
+USER nextjs
+
+# ヘルスチェック用の軽量エンドポイント
+EXPOSE 8080
+
+# 環境変数
+ENV NODE_ENV=production
+ENV PORT=8080
+ENV LOG_LEVEL=ERROR
+ENV PHASE=0
+
+# ヘルスチェック
+HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
+  CMD curl -f http://localhost:8080/health || exit 1
+
+# 起動コマンド
+CMD ["./start-phase0.sh"]
