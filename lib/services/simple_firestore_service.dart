@@ -13,7 +13,7 @@ class SimpleFirestoreService {
   // タイムライン関連 (Write Fan-out方式)
   // ========================================
   
-  /// ユーザーのタイムライン取得 (Inbox方式)
+  /// ユーザーのタイムライン取得 (Inbox方式) - N+1クエリ解決
   static Future<List<Countdown>> getTimeline(String userId, {int limit = 100}) async {
     try {
       final snapshot = await _db
@@ -29,13 +29,31 @@ class SimpleFirestoreService {
         return await _generateTimelineFromFollowing(userId, limit);
       }
       
+      // N+1クエリ解決: Inbox内の非正規化データを使用
       final List<Countdown> timeline = [];
       for (final doc in snapshot.docs) {
         final inboxData = doc.data();
-        final postDoc = await _db.collection('posts').doc(inboxData['postId']).get();
         
-        if (postDoc.exists) {
-          timeline.add(Countdown.fromFirestore(postDoc));
+        // Inboxに保存された非正規化データからCountdownオブジェクトを構築
+        if (inboxData.containsKey('eventName') && inboxData.containsKey('eventDate')) {
+          final countdown = Countdown(
+            id: inboxData['postId'] ?? doc.id,
+            eventName: inboxData['eventName'] ?? '',
+            category: inboxData['category'] ?? '',
+            eventDate: (inboxData['eventDate'] as Timestamp?)?.toDate() ?? DateTime.now(),
+            createdAt: (inboxData['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+            creatorId: inboxData['creatorId'] ?? '',
+            likesCount: inboxData['likesCount'] ?? 0,
+            commentsCount: inboxData['commentsCount'] ?? 0,
+            participantsCount: inboxData['participantsCount'] ?? 0,
+          );
+          timeline.add(countdown);
+        } else {
+          // フォールバック: 古いデータの場合は個別取得 (徐々に減る)
+          final postDoc = await _db.collection('posts').doc(inboxData['postId']).get();
+          if (postDoc.exists) {
+            timeline.add(Countdown.fromFirestore(postDoc));
+          }
         }
       }
       
@@ -46,7 +64,7 @@ class SimpleFirestoreService {
     }
   }
   
-  /// タイムラインストリーム取得
+  /// タイムラインストリーム取得 - N+1クエリ解決
   static Stream<List<Countdown>> getTimelineStream(String userId, {int limit = 100}) {
     return _db
         .collection('inbox')
@@ -60,13 +78,31 @@ class SimpleFirestoreService {
         return await _generateTimelineFromFollowing(userId, limit);
       }
       
+      // N+1クエリ解決: Inbox内の非正規化データを使用
       final List<Countdown> timeline = [];
       for (final doc in snapshot.docs) {
         final inboxData = doc.data();
-        final postDoc = await _db.collection('posts').doc(inboxData['postId']).get();
         
-        if (postDoc.exists) {
-          timeline.add(Countdown.fromFirestore(postDoc));
+        // Inboxに保存された非正規化データからCountdownオブジェクトを構築
+        if (inboxData.containsKey('eventName') && inboxData.containsKey('eventDate')) {
+          final countdown = Countdown(
+            id: inboxData['postId'] ?? doc.id,
+            eventName: inboxData['eventName'] ?? '',
+            category: inboxData['category'] ?? '',
+            eventDate: (inboxData['eventDate'] as Timestamp?)?.toDate() ?? DateTime.now(),
+            createdAt: (inboxData['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+            creatorId: inboxData['creatorId'] ?? '',
+            likesCount: inboxData['likesCount'] ?? 0,
+            commentsCount: inboxData['commentsCount'] ?? 0,
+            participantsCount: inboxData['participantsCount'] ?? 0,
+          );
+          timeline.add(countdown);
+        } else {
+          // フォールバック: 古いデータの場合は個別取得 (徐々に減る)
+          final postDoc = await _db.collection('posts').doc(inboxData['postId']).get();
+          if (postDoc.exists) {
+            timeline.add(Countdown.fromFirestore(postDoc));
+          }
         }
       }
       
@@ -163,6 +199,9 @@ class SimpleFirestoreService {
           'eventName': post.eventName,
           'category': post.category,
           'eventDate': post.eventDate,
+          'likesCount': post.likesCount ?? 0,
+          'commentsCount': post.commentsCount ?? 0,
+          'participantsCount': post.participantsCount ?? 0,
         });
         
         batchCount++;

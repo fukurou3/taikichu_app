@@ -1,40 +1,27 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'unified_analytics_service.dart';
-import 'mvp_analytics_client.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'simple_firestore_service.dart';
 
-/// スケーラブルなライクサービス
+/// ライクサービス (Phase0 - Firestore only)
 /// 
-/// 分散カウンターとイベント駆動型トレンド更新に対応
-/// 大量のいいねが集中してもFirestore書き込み上限に引っかからない
+/// SimpleFirestoreServiceを直接使用し、マイクロサービス依存を排除
 class ScalableLikeService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  /// 【統一パイプライン】いいねの切り替え
-  /// 
-  /// 🚀 クライアントはイベント発行のみ、Firestore更新はサーバーサイドで実行
-  /// 💡 二重書き込み問題を解決し、データ整合性を保証
+  /// いいねの切り替え
   static Future<bool> toggleLike(String countdownId) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw Exception('ログインが必要です');
 
     try {
-      // 現在のいいね状態を **読み取り専用** で確認
-      final isCurrentlyLiked = await isLiked(countdownId, user.uid);
+      final isCurrentlyLiked = await SimpleFirestoreService.isLiked(countdownId);
       
-      // 🚀 統一パイプラインへイベントを送信するだけ！
-      // Firestore更新はサーバーサイド（Cloud Run）で実行される
-      final success = await UnifiedAnalyticsService.sendLikeEvent(
-        countdownId, 
-        !isCurrentlyLiked
-      );
-      
-      if (!success) {
-        throw Exception('いいねイベントの送信に失敗しました');
+      if (isCurrentlyLiked) {
+        await SimpleFirestoreService.unlikePost(countdownId);
+      } else {
+        await SimpleFirestoreService.likePost(countdownId);
       }
       
-      // UI即時反映のため、成功したと仮定して新しい状態を返す
-      // 実際のFirestore状態は数秒後にサーバーサイドで更新される
       return !isCurrentlyLiked;
       
     } catch (e) {
@@ -43,87 +30,43 @@ class ScalableLikeService {
     }
   }
 
-  /// 【移行完了】いいね状態の確認（バックエンドAPI経由）
-  /// 
-  /// 🚀 Redis から高速取得（1-5ms）
-  /// 💰 Firestore読み取りコストを完全削除
+  /// いいね状態の確認
   static Future<bool> isLiked(String countdownId, String userId) async {
     try {
-      final userState = await MVPAnalyticsClient.getUserState(userId, countdownId);
-      return userState['is_liked'] ?? false;
+      return await SimpleFirestoreService.isLiked(countdownId);
     } catch (e) {
       print('ScalableLikeService - Error checking like status: $e');
       return false;
     }
   }
 
-  /// 【超高速・安全】Redis集計済みいいね数を取得
-  /// 
-  /// 🚀 統一パイプライン: 1-5ms超高速レスポンス
-  /// 💰 コストを98%削減
+  /// いいね数を取得 (Firestoreから直接取得)
   static Future<int> getLikesCount(String countdownId) async {
     try {
-      return await MVPAnalyticsClient.getCounterValue(
-        countdownId: countdownId,
-        counterType: 'likes',
-      );
+      final postDoc = await _firestore.collection('posts').doc(countdownId).get();
+      if (postDoc.exists) {
+        return postDoc.data()?['likesCount'] ?? 0;
+      }
+      return 0;
     } catch (e) {
       print('ScalableLikeService - Error getting likes count: $e');
       return 0;
     }
   }
 
-
-  /// 【統一パイプライン】ユーザーのいいね一覧を取得
-  /// 
-  /// 🚀 Redis経由で高速データ取得
-  /// ⚠️ Firestore直接アクセスは禁止  
+  /// ユーザーのいいね一覧を取得
   static Future<List<String>> getUserLikedCountdowns(String userId) async {
     try {
-      // 🚀 統一パイプライン: Cloud Run API経由でユーザーいいね一覧取得
-      // TODO: MVPAnalyticsClientにgetUserLikedCountdowns APIを追加
-      // 現時点では読み取り専用のため、Firestore読み取りを一時的に維持
       final snapshot = await _firestore
           .collection('likes')
           .where('userId', isEqualTo: userId)
           .get();
       
       return snapshot.docs
-          .map((doc) => doc.data()['countdownId'] as String)
+          .map((doc) => doc.data()['postId'] as String)
           .toList();
     } catch (e) {
       print('ScalableLikeService - Error getting user likes: $e');
-      return [];
-    }
-  }
-
-  /// 【統一パイプライン】特定カウントダウンのいいねユーザー一覧
-  /// 
-  /// 🚀 Redis経由で高速データ取得
-  /// ⚠️ Firestore直接アクセスは禁止
-  static Future<List<Map<String, dynamic>>> getCountdownLikers(
-    String countdownId, {
-    int limit = 50,
-  }) async {
-    try {
-      // 🚀 統一パイプライン: Cloud Run API経由でいいねユーザー一覧取得
-      // TODO: MVPAnalyticsClientにgetCountdownLikers APIを追加
-      // 現時点では読み取り専用のため、Firestore読み取りを一時的に維持
-      final snapshot = await _firestore
-          .collection('likes')
-          .where('countdownId', isEqualTo: countdownId)
-          .orderBy('likedAt', descending: true)
-          .limit(limit)
-          .get();
-      
-      return snapshot.docs
-          .map((doc) => {
-                'userId': doc.data()['userId'],
-                'likedAt': doc.data()['likedAt'],
-              })
-          .toList();
-    } catch (e) {
-      print('ScalableLikeService - Error getting likers: $e');
       return [];
     }
   }

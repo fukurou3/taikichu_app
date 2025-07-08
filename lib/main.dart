@@ -1,152 +1,325 @@
-// lib/main.dart
+// Phase0 v2.1 Minimal Flutter App
+// Simplified version for ¥7,000/month budget
 
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_crashlytics/firebase_crashlytics.dart';
-import 'firebase_options.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'screens/simple_home_screen.dart';
-import 'screens/search_screen.dart';
-import 'screens/notifications_screen.dart';
-import 'screens/simple_profile_screen.dart';
-import 'screens/create_countdown_screen.dart';
-import 'screens/countdown_search_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-void main() async { // main関数を非同期 (async) に変更
-  // Flutterエンジンのバインディングが初期化されるのを確実にする
-  WidgetsFlutterBinding.ensureInitialized(); 
-
-  // Firebaseの初期化
-  // これにより、アプリがFirebaseプロジェクトに接続されます
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
-
-  // 🔥 Firebase Crashlytics の初期化と設定
-  // フレームワークでキャッチされないエラーをCrashlyticsに送信
-  FlutterError.onError = (errorDetails) {
-    FirebaseCrashlytics.instance.recordFlutterFatalError(errorDetails);
-  };
-  
-  // Dart VM でキャッチされないエラーをCrashlyticsに送信
-  PlatformDispatcher.instance.onError = (error, stack) {
-    FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
-    return true;
-  };
-
-  // デバッグモードでのCrashlytics無効化（開発時のノイズを防ぐ）
-  if (kDebugMode) {
-    await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(false);
-  } else {
-    await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(true);
-  }
-
-  // 匿名認証でログイン (開発中のテスト用、本番では別の認証方法を実装します)
-  // FirebaseコンソールでAuthenticationの「匿名」プロバイダを有効にする必要があります。
-  try {
-    await FirebaseAuth.instance.signInAnonymously();
-    print("Signed in anonymously."); // 匿名ログインが成功したことをコンソールに出力
-    
-    // Crashlyticsにユーザー識別子を設定
-    await FirebaseCrashlytics.instance.setUserIdentifier(
-      FirebaseAuth.instance.currentUser?.uid ?? 'anonymous',
-    );
-    
-  } catch (e) {
-    print("Error signing in anonymously: $e"); // エラーが発生した場合はコンソールに出力
-    
-    // 認証エラーもCrashlyticsに報告
-    FirebaseCrashlytics.instance.recordError(
-      e,
-      StackTrace.current,
-      reason: 'Anonymous authentication failed',
-    );
-  }
-
-  // アプリケーションを実行
-  runApp(const MyApp());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+  runApp(TaikichuAppPhase0());
 }
 
-// ここから下のMyAppクラスとMyHomePageクラスは、
-// flutter create で自動生成されたデフォルトのコードのままでOKです。
-// アプリ名だけ『待機中。』に変更しておくと良いでしょう。
-
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
+class TaikichuAppPhase0 extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: '待機中。', // アプリ名を『待機中。』に変更
+      title: 'Taikichu App - Phase0',
       theme: ThemeData(
         primarySwatch: Colors.blue,
-        scaffoldBackgroundColor: Colors.white,
-        canvasColor: Colors.white,
+        visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
-      home: const MyHomePage(title: '待機中。'), // アプリ名を『待機中。』に変更
+      home: AuthWrapper(),
+      debugShowCheckedModeBanner: false,
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  final String title;
-
+class AuthWrapper extends StatelessWidget {
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  Widget build(BuildContext context) {
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return LoadingScreen();
+        }
+        
+        if (snapshot.hasData) {
+          return HomeScreen();
+        }
+        
+        return LoginScreen();
+      },
+    );
+  }
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _selectedIndex = 0;
+class LoadingScreen extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Phase0 Loading...'),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
-  final List<Widget> _screens = [
-    const SimpleHomeScreen(),
-    const SearchScreen(),
-    const NotificationsScreen(),
-    const SimpleProfileScreen(),
-  ];
+class LoginScreen extends StatefulWidget {
+  @override
+  _LoginScreenState createState() => _LoginScreenState();
+}
 
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
+class _LoginScreenState extends State<LoginScreen> {
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  bool _isLoading = false;
+
+  Future<void> _signIn() async {
+    setState(() { _isLoading = true; });
+    
+    try {
+      await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: _emailController.text,
+        password: _passwordController.text,
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Login failed: $e')),
+      );
+    }
+    
+    setState(() { _isLoading = false; });
+  }
+
+  Future<void> _signUp() async {
+    setState(() { _isLoading = true; });
+    
+    try {
+      await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: _emailController.text,
+        password: _passwordController.text,
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Sign up failed: $e')),
+      );
+    }
+    
+    setState(() { _isLoading = false; });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: _screens[_selectedIndex],
+      appBar: AppBar(title: Text('Taikichu - Phase0')),
+      body: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              'Phase0 v2.1',
+              style: Theme.of(context).textTheme.headlineMedium,
+            ),
+            SizedBox(height: 32),
+            TextField(
+              controller: _emailController,
+              decoration: InputDecoration(labelText: 'Email'),
+              keyboardType: TextInputType.emailAddress,
+            ),
+            SizedBox(height: 16),
+            TextField(
+              controller: _passwordController,
+              decoration: InputDecoration(labelText: 'Password'),
+              obscureText: true,
+            ),
+            SizedBox(height: 24),
+            if (_isLoading)
+              CircularProgressIndicator()
+            else
+              Column(
+                children: [
+                  ElevatedButton(
+                    onPressed: _signIn,
+                    child: Text('Sign In'),
+                    style: ElevatedButton.styleFrom(
+                      minimumSize: Size(double.infinity, 48),
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  TextButton(
+                    onPressed: _signUp,
+                    child: Text('Create Account'),
+                  ),
+                ],
+              ),
+          ],
+        ),
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        backgroundColor: Colors.white,
-        currentIndex: _selectedIndex,
-        onTap: _onItemTapped,
-        selectedItemColor: Colors.black,
-        unselectedItemColor: Colors.grey,
-        showSelectedLabels: false,
-        showUnselectedLabels: false,
-        elevation: 0,
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home),
-            label: '',
+    );
+  }
+}
+
+class HomeScreen extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Taikichu - Phase0'),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.logout),
+            onPressed: () => FirebaseAuth.instance.signOut(),
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.search),
-            label: '',
+        ],
+      ),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('posts')
+            .orderBy('createdAt', descending: true)
+            .limit(20)
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return Center(child: CircularProgressIndicator());
+          }
+          
+          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.timeline, size: 64, color: Colors.grey),
+                  SizedBox(height: 16),
+                  Text('No posts yet - Phase0 Ready!'),
+                  SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () => _createSamplePost(context),
+                    child: Text('Create Sample Post'),
+                  ),
+                ],
+              ),
+            );
+          }
+          
+          return ListView.builder(
+            itemCount: snapshot.data!.docs.length,
+            itemBuilder: (context, index) {
+              final doc = snapshot.data!.docs[index];
+              final data = doc.data() as Map<String, dynamic>;
+              
+              return Card(
+                margin: EdgeInsets.all(8),
+                child: ListTile(
+                  title: Text(data['title'] ?? 'No Title'),
+                  subtitle: Text(data['description'] ?? 'No Description'),
+                  trailing: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.favorite, color: Colors.red),
+                      Text('${data['likesCount'] ?? 0}'),
+                    ],
+                  ),
+                  onTap: () {
+                    // Phase0: Simple detail view
+                    showDialog(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: Text(data['title'] ?? 'Post'),
+                        content: Text(data['description'] ?? 'No description'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: Text('Close'),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              );
+            },
+          );
+        },
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _showCreatePostDialog(context),
+        child: Icon(Icons.add),
+      ),
+    );
+  }
+  
+  void _createSamplePost(BuildContext context) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    
+    await FirebaseFirestore.instance.collection('posts').add({
+      'title': 'Phase0 Sample Post',
+      'description': 'This is a sample post for Phase0 v2.1',
+      'userId': user.uid,
+      'userName': user.email ?? 'Anonymous',
+      'likesCount': 0,
+      'commentsCount': 0,
+      'createdAt': FieldValue.serverTimestamp(),
+      'targetDate': DateTime.now().add(Duration(days: 7)).toIso8601String(),
+    });
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Sample post created!')),
+    );
+  }
+  
+  void _showCreatePostDialog(BuildContext context) {
+    final titleController = TextEditingController();
+    final descriptionController = TextEditingController();
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Create New Post'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: titleController,
+              decoration: InputDecoration(labelText: 'Title'),
+            ),
+            SizedBox(height: 16),
+            TextField(
+              controller: descriptionController,
+              decoration: InputDecoration(labelText: 'Description'),
+              maxLines: 3,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel'),
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.notifications),
-            label: '',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person),
-            label: '',
+          ElevatedButton(
+            onPressed: () async {
+              final user = FirebaseAuth.instance.currentUser;
+              if (user != null && titleController.text.isNotEmpty) {
+                await FirebaseFirestore.instance.collection('posts').add({
+                  'title': titleController.text,
+                  'description': descriptionController.text,
+                  'userId': user.uid,
+                  'userName': user.email ?? 'Anonymous',
+                  'likesCount': 0,
+                  'commentsCount': 0,
+                  'createdAt': FieldValue.serverTimestamp(),
+                  'targetDate': DateTime.now().add(Duration(days: 7)).toIso8601String(),
+                });
+                
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Post created!')),
+                );
+              }
+            },
+            child: Text('Create'),
           ),
         ],
       ),

@@ -86,72 +86,13 @@ jobs:
           cd functions
           npm test
 
-  # ---------------------------------------------------
-  # 3. Cloud Run Analytics Service のビルドとテスト
-  # ---------------------------------------------------
-  analytics_service_test:
-    name: Analytics Service Build & Test
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: ⬇️ Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: 🐍 Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: 📦 Install Analytics Service Dependencies
-        run: |
-          cd analytics-service
-          pip install -r requirements.txt
-
-      - name: 🧪 Test Analytics Service
-        run: |
-          cd analytics-service
-          python -m pytest --verbose
-
-  # ---------------------------------------------------
-  # 4. マイクロサービスのビルドとテスト
-  # ---------------------------------------------------
-  microservices_test:
-    name: Microservices Build & Test
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        service: [fanout-service, like-service]
-
-    steps:
-      - name: ⬇️ Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: 🐍 Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: 📦 Install ${{ matrix.service }} Dependencies
-        run: |
-          cd microservices/${{ matrix.service }}
-          pip install -r requirements.txt
-
-      - name: 🔬 Lint ${{ matrix.service }}
-        run: |
-          cd microservices/${{ matrix.service }}
-          python -m flake8 --max-line-length=120 main.py
-
-      - name: 🧪 Test ${{ matrix.service }}
-        run: |
-          cd microservices/${{ matrix.service }}
-          python -m pytest tests/ --verbose || echo "No tests found for ${{ matrix.service }}"
 
   # ---------------------------------------------------
   # 4. アプリをデプロイするジョブ（全テスト成功後に実行）
   # ---------------------------------------------------
   deploy:
     name: Deploy to Production
-    needs: [build_and_test, functions_test, analytics_service_test, microservices_test]
+    needs: [build_and_test, functions_test]
     runs-on: ubuntu-latest
     
     # 【変更点 ②】手動実行された場合のみ、このジョブを動かすように条件を変更
@@ -186,44 +127,12 @@ jobs:
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
 
-      # Google Cloud認証
-      - name: 🔑 Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
-
-      - name: 🐳 Configure Docker to use gcloud
-        run: |
-          gcloud auth configure-docker
-          gcloud auth configure-docker asia-northeast1-docker.pkg.dev
-
-      # マイクロサービス一括デプロイ
-      - name: 🚀 Deploy All Microservices to Cloud Run
-        run: |
-          cd microservices
-          chmod +x docker-build.sh
-          ./docker-build.sh all
-        env:
-          PROJECT_ID: taikichu-app-c8dcd
-          REGION: asia-northeast1
-
-      # 個別サービスのヘルスチェック
-      - name: 🏥 Health Check All Services
-        run: |
-          cd microservices
-          ./docker-build.sh health
-        continue-on-error: true
-
       # デプロイ完了通知
       - name: ✅ Deployment Success
         run: |
-          echo "🎉 全てのサービスが正常にデプロイされました"
-          echo "- Firebase Functions: 統一パイプライン対応版"
-          echo "- Cloud Run Analytics Service: 高速分析エンジン"
-          echo "- Cloud Run Fanout Service: タイムライン更新専用"
-          echo "- Cloud Run Like Service: いいね処理専用"
-          echo "- 完全なマイクロサービスアーキテクチャ実現"
-          echo "- サーバーレス・自動スケーリング・コスト最適化達成"
+          echo "🎉 Firebase Functions が正常にデプロイされました"
+          echo "- Firebase Functions: Phase0 Firestore-only版"
+          echo "- シンプルなアーキテクチャでコスト最適化達成"
 
       # Slack通知（オプション）
       - name: 📢 Notify Deployment
@@ -231,7 +140,7 @@ jobs:
         with:
           status: ${{ job.status }}
           fields: repo,message,commit,author,action,eventName,ref,workflow
-          text: "🚀 Taikichu App デプロイ完了\n✅ 全マイクロサービスがCloud Runで稼働中"
+          text: "🚀 Taikichu App デプロイ完了\n✅ Firebase Functions 稼働中"
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         if: always() && secrets.SLACK_WEBHOOK_URL != ''

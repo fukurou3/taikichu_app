@@ -1,40 +1,26 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'unified_analytics_service.dart';
-import 'mvp_analytics_client.dart';
 
-/// スケーラブルな参加者サービス
+/// 参加者サービス (Phase0 - Firestore only)
 /// 
-/// 分散カウンターとイベント駆動型トレンド更新に対応
-/// 大量の参加が集中してもFirestore書き込み上限に引っかからない
+/// Firestoreを直接使用し、マイクロサービス依存を排除
 class ScalableParticipantService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  /// 【統一パイプライン】カウントダウンへの参加/参加解除
-  /// 
-  /// 🚀 クライアントはイベント発行のみ、Firestore更新はサーバーサイドで実行
-  /// 💡 二重書き込み問題を解決し、データ整合性を保証
+  /// カウントダウンへの参加/参加解除
   static Future<bool> toggleParticipation(String countdownId) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw Exception('ログインが必要です');
 
     try {
-      // 現在の参加状態を **読み取り専用** で確認
       final isCurrentlyParticipating = await isParticipating(countdownId);
       
-      // 🚀 統一パイプラインへイベントを送信するだけ！
-      // Firestore更新はサーバーサイド（Cloud Run）で実行される
-      final success = await UnifiedAnalyticsService.sendParticipationEvent(
-        countdownId, 
-        !isCurrentlyParticipating
-      );
-      
-      if (!success) {
-        throw Exception('参加イベントの送信に失敗しました');
+      if (isCurrentlyParticipating) {
+        await _removeParticipation(countdownId, user.uid);
+      } else {
+        await _addParticipation(countdownId, user.uid);
       }
       
-      // UI即時反映のため、成功したと仮定して新しい状態を返す
-      // 実際のFirestore状態は数秒後にサーバーサイドで更新される
       return !isCurrentlyParticipating;
       
     } catch (e) {
@@ -43,37 +29,66 @@ class ScalableParticipantService {
     }
   }
 
-  /// 【移行完了】参加状態の確認（バックエンドAPI経由）
-  /// 
-  /// 🚀 Redis から高速取得（1-5ms）
-  /// 💰 Firestore読み取りコストを完全削除
+  /// 参加状態の確認
   static Future<bool> isParticipating(String countdownId) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return false;
 
     try {
-      final userState = await MVPAnalyticsClient.getUserState(user.uid, countdownId);
-      return userState['is_participating'] ?? false;
+      final doc = await _firestore.collection('participants').doc('${user.uid}_$countdownId').get();
+      return doc.exists;
     } catch (e) {
       print('ScalableParticipantService - Error checking participation: $e');
       return false;
     }
   }
 
-  /// 【超高速・安全】Redis集計済み参加者数を取得
-  /// 
-  /// 🚀 統一パイプライン: 1-5ms超高速レスポンス
-  /// 💰 コストを98%削減
+  /// 参加者数を取得
   static Future<int> getParticipantsCount(String countdownId) async {
     try {
-      return await MVPAnalyticsClient.getCounterValue(
-        countdownId: countdownId,
-        counterType: 'participants',
-      );
+      final postDoc = await _firestore.collection('posts').doc(countdownId).get();
+      if (postDoc.exists) {
+        return postDoc.data()?['participantsCount'] ?? 0;
+      }
+      return 0;
     } catch (e) {
       print('ScalableParticipantService - Error getting participants count: $e');
       return 0;
     }
+  }
+
+  /// 参加を追加
+  static Future<void> _addParticipation(String countdownId, String userId) async {
+    final batch = _firestore.batch();
+    
+    // 参加記録作成
+    final participantRef = _firestore.collection('participants').doc('${userId}_$countdownId');
+    batch.set(participantRef, {
+      'userId': userId,
+      'countdownId': countdownId,
+      'participatedAt': FieldValue.serverTimestamp(),
+    });
+    
+    // 投稿の参加者数更新
+    final postRef = _firestore.collection('posts').doc(countdownId);
+    batch.update(postRef, {'participantsCount': FieldValue.increment(1)});
+    
+    await batch.commit();
+  }
+
+  /// 参加を削除
+  static Future<void> _removeParticipation(String countdownId, String userId) async {
+    final batch = _firestore.batch();
+    
+    // 参加記録削除
+    final participantRef = _firestore.collection('participants').doc('${userId}_$countdownId');
+    batch.delete(participantRef);
+    
+    // 投稿の参加者数更新
+    final postRef = _firestore.collection('posts').doc(countdownId);
+    batch.update(postRef, {'participantsCount': FieldValue.increment(-1)});
+    
+    await batch.commit();
   }
 
 
