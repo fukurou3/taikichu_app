@@ -18,60 +18,49 @@ class CountdownService {
     });
   }
 
-  /// 【非推奨】直接カウントダウン作成
-  /// ⚠️ 統一パイプライン移行後は使用禁止
-  @Deprecated('Use UnifiedAnalyticsService.sendEvent() instead')
-  static Future<void> addCountdown(Countdown countdown) async {
-    throw UnimplementedError('Direct countdown creation disabled for security - use unified pipeline');
-  }
 
-  /// 【統一パイプライン】カウントダウン作成イベント送信
+  /// 【統一パイプライン】カウントダウン作成（Firestore書き込み + ファンアウト）
   static Future<bool> createCountdownEvent(Countdown countdown) async {
     try {
-      return await UnifiedAnalyticsService.sendEvent(
-        type: 'countdown_created',
-        countdownId: countdown.id,
-        metadata: {
+      // 1. Firestoreにドキュメントを作成
+      final docRef = await _firestore.collection(_collection).add({
+        'eventName': countdown.eventName,
+        'description': countdown.description,
+        'eventDate': Timestamp.fromDate(countdown.eventDate),
+        'category': countdown.category,
+        'creatorId': countdown.creatorId,
+        'hashtags': countdown.hashtags,
+        'imageUrl': countdown.imageUrl,
+        'status': 'visible',
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      final countdownId = docRef.id;
+      print('CountdownService - Created countdown with ID: $countdownId');
+
+      // 2. ファンアウト処理：統一パイプライン経由でカウントダウン作成イベント送信
+      final eventSuccess = await UnifiedAnalyticsService.sendCountdownCreatedEvent(
+        countdownId,
+        countdownData: {
           'eventName': countdown.eventName,
           'eventDate': countdown.eventDate.toIso8601String(),
           'creatorId': countdown.creatorId,
-          'hashtags': countdown.hashtags,
-          'description': countdown.description,
+          'category': countdown.category,
         },
       );
+
+      if (!eventSuccess) {
+        print('CountdownService - Warning: Event sending failed, but document created');
+      }
+
+      return true;
     } catch (e) {
-      print('CountdownService - Error creating countdown event: $e');
+      print('CountdownService - Error creating countdown: $e');
       return false;
     }
   }
 
-  /// 【非推奨】直接参加者数更新
-  /// ⚠️ 統一パイプライン移行後は使用禁止
-  @Deprecated('Use UnifiedAnalyticsService.sendParticipationEvent() instead')
-  static Future<void> updateParticipantsCount(String countdownId, int newCount) async {
-    throw UnimplementedError('Direct counts update disabled for security - use unified pipeline');
-  }
-
-  /// 【非推奨】直接いいね数更新
-  /// ⚠️ 統一パイプライン移行後は使用禁止
-  @Deprecated('Use UnifiedAnalyticsService.sendLikeEvent() instead')
-  static Future<void> updateLikesCount(String countdownId, int increment) async {
-    throw UnimplementedError('Direct counts update disabled for security - use unified pipeline');
-  }
-
-  /// 【非推奨】直接コメント数更新
-  /// ⚠️ 統一パイプライン移行後は使用禁止
-  @Deprecated('Use UnifiedAnalyticsService.sendCommentEvent() instead')
-  static Future<void> updateCommentsCount(String countdownId, int increment) async {
-    throw UnimplementedError('Direct counts update disabled for security - use unified pipeline');
-  }
-
-  /// 【非推奨】直接カウントダウン削除
-  /// ⚠️ 統一パイプライン移行後は使用禁止
-  @Deprecated('Use UnifiedAnalyticsService.sendEvent() instead')
-  static Future<void> deleteCountdown(String countdownId) async {
-    throw UnimplementedError('Direct countdown deletion disabled for security - use unified pipeline');
-  }
 
   /// 【統一パイプライン】カウントダウン削除イベント送信
   static Future<bool> deleteCountdownEvent(String countdownId) async {

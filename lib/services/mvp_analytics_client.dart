@@ -13,6 +13,11 @@ class MVPAnalyticsClient {
   static const String _baseUrl = 'https://analytics-service-694414843228.asia-northeast1.run.app';
   
   static final http.Client _httpClient = http.Client();
+  
+  static String get baseUrl => _baseUrl;
+  static Map<String, String> get headers => {
+    'Content-Type': 'application/json',
+  };
 
   /// 【高速】トレンドスコアを取得
   /// 
@@ -244,6 +249,123 @@ class MVPAnalyticsClient {
     _httpClient.close();
     clearCache();
   }
+
+  /// 【管理者機能】監査ログを取得
+  /// 
+  /// 🛡️ 管理者操作の履歴を取得
+  /// 🔍 詳細な検索・フィルタリング機能
+  static Future<List<Map<String, dynamic>>> getAdminLogs({
+    String? adminUid,
+    String? targetType,
+    String? targetId,
+    String? action,
+    DateTime? startDate,
+    DateTime? endDate,
+    int limit = 50,
+    String? lastDocumentId,
+  }) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        throw Exception('認証が必要です');
+      }
+
+      final token = await user.getIdToken();
+      final queryParams = <String, String>{
+        'limit': limit.toString(),
+      };
+
+      if (adminUid != null) queryParams['admin_uid'] = adminUid;
+      if (targetType != null) queryParams['target_type'] = targetType;
+      if (targetId != null) queryParams['target_id'] = targetId;
+      if (action != null) queryParams['action'] = action;
+      if (startDate != null) queryParams['start_date'] = startDate.toIso8601String();
+      if (endDate != null) queryParams['end_date'] = endDate.toIso8601String();
+      if (lastDocumentId != null) queryParams['last_document_id'] = lastDocumentId;
+
+      final uri = Uri.parse('$_baseUrl/admin/logs').replace(
+        queryParameters: queryParams,
+      );
+
+      final response = await _httpClient.get(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final logs = data['logs'] as List?;
+        return logs?.cast<Map<String, dynamic>>() ?? [];
+      } else {
+        await ErrorReporter.reportApiError(
+          uri.toString(),
+          response.statusCode,
+          response.body,
+          'Failed to get admin logs',
+          StackTrace.current,
+        );
+        return [];
+      }
+    } catch (e) {
+      print('MVPAnalyticsClient - Error getting admin logs: $e');
+      return [];
+    }
+  }
+
+  /// 【管理者機能】管理者活動統計を取得
+  /// 
+  /// 📊 管理者の活動状況を可視化
+  /// 🔍 異常な操作パターンを検出
+  static Future<Map<String, dynamic>> getAdminActivityStats({
+    String? adminUid,
+    DateTime? startDate,
+    DateTime? endDate,
+  }) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        throw Exception('認証が必要です');
+      }
+
+      final token = await user.getIdToken();
+      final queryParams = <String, String>{};
+
+      if (adminUid != null) queryParams['admin_uid'] = adminUid;
+      if (startDate != null) queryParams['start_date'] = startDate.toIso8601String();
+      if (endDate != null) queryParams['end_date'] = endDate.toIso8601String();
+
+      final uri = Uri.parse('$_baseUrl/admin/activity-stats').replace(
+        queryParameters: queryParams,
+      );
+
+      final response = await _httpClient.get(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        await ErrorReporter.reportApiError(
+          uri.toString(),
+          response.statusCode,
+          response.body,
+          'Failed to get admin activity stats',
+          StackTrace.current,
+        );
+        return {};
+      }
+    } catch (e) {
+      print('MVPAnalyticsClient - Error getting admin activity stats: $e');
+      return {};
+    }
+  }
 }
 
 /// トレンドランキングアイテム
@@ -337,6 +459,7 @@ class _CachedValue<T> {
         return {
           'is_participating': data['is_participating'] as bool? ?? false,
           'is_liked': data['is_liked'] as bool? ?? false,
+          'is_following': data['is_following'] as bool? ?? false,
         };
       } else {
         print('MVPAnalyticsClient - Error getting user state: ${response.statusCode}');
@@ -345,7 +468,7 @@ class _CachedValue<T> {
       print('MVPAnalyticsClient - Error getting user state: $e');
     }
     
-    return {'is_participating': false, 'is_liked': false};
+    return {'is_participating': false, 'is_liked': false, 'is_following': false};
   }
 
   /// 【新機能】コメントリストを取得（ページネーション対応）
@@ -386,6 +509,56 @@ class _CachedValue<T> {
     }
     
     return [];
+  }
+
+  /// 【新機能】フォロー状態を取得
+  static Future<Map<String, dynamic>> getUserFollows(String userId) async {
+    try {
+      final response = await _httpClient
+          .get(
+            Uri.parse('$_baseUrl/user-follows/$userId'),
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          )
+          .timeout(const Duration(seconds: 3));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data;
+      } else {
+        print('MVPAnalyticsClient - Error getting user follows: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('MVPAnalyticsClient - Error getting user follows: $e');
+    }
+    
+    return {'follow_counts': {'following': 0, 'followers': 0}};
+  }
+
+  /// 【新機能】フォロワーリストを取得
+  static Future<Map<String, dynamic>> getFollowers(String userId) async {
+    try {
+      final response = await _httpClient
+          .get(
+            Uri.parse('$_baseUrl/followers/$userId'),
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          )
+          .timeout(const Duration(seconds: 3));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data;
+      } else {
+        print('MVPAnalyticsClient - Error getting followers: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('MVPAnalyticsClient - Error getting followers: $e');
+    }
+    
+    return {'followers': [], 'count': 0};
   }
 }
 

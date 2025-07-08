@@ -87,6 +87,14 @@ COUNTER_KEY = "counter:{type}:{countdown_id}"
 RANKING_KEY = "ranking:{category}"
 GLOBAL_RANKING_KEY = "ranking:global"
 
+# ファンアウト・アーキテクチャ用 Redis キー
+USER_FOLLOWS_KEY = "user_follows:{user_id}"
+USER_FOLLOWERS_KEY = "user_followers:{user_id}"
+FOLLOW_COUNT_KEY = "follow_count:{user_id}"
+TIMELINE_KEY = "timeline:{user_id}"
+GLOBAL_TIMELINE_KEY = "global_timeline"
+TIMELINE_META_KEY = "timeline_meta:{user_id}"
+
 
 class AnalyticsProcessor:
     """リアルタイム分析処理クラス"""
@@ -179,6 +187,18 @@ class AnalyticsProcessor:
                 elif event_type == 'like_removed':
                     user_like_key = f"user_like:{user_id}:{countdown_id}"
                     pipe.delete(user_like_key)
+                elif event_type == 'follow_toggle':
+                    # フォロー/アンフォローイベントの処理
+                    follow_event = {
+                        'userId': user_id,
+                        'targetUserId': countdown_id,  # この場合はtargetUserIdとして扱う
+                        'action': event.get('eventData', {}).get('action', 'follow')
+                    }
+                    self.process_follow_event(follow_event)
+                elif event_type == 'countdown_created':
+                    # カウントダウン作成時のファンアウト処理
+                    score = datetime.now(timezone.utc).timestamp()
+                    self.fan_out_to_followers(user_id, countdown_id, score)
             
             # 6. 活動メタデータ更新
             metadata_key = f"activity:{countdown_id}"
@@ -291,6 +311,210 @@ class AnalyticsProcessor:
         except Exception as e:
             logger.error(f"Error getting ranking: {e}")
             return []
+    
+    def process_follow_event(self, event: Dict[str, Any]) -> Dict[str, Any]:
+        """フォロー/アンフォロー イベント処理"""
+        try:
+            user_id = event.get('userId')
+            target_user_id = event.get('targetUserId')
+            action = event.get('action')  # 'follow' or 'unfollow'
+            
+            if not all([user_id, target_user_id, action]):
+                raise ValueError("Missing required fields: userId, targetUserId, action")
+            
+            pipe = self.redis.pipeline()
+            
+            if action == 'follow':
+                # フォロー関係を追加
+                pipe.sadd(USER_FOLLOWS_KEY.format(user_id=user_id), target_user_id)
+                pipe.sadd(USER_FOLLOWERS_KEY.format(user_id=target_user_id), user_id)
+                
+                # カウンターを更新
+                pipe.hincrby(FOLLOW_COUNT_KEY.format(user_id=user_id), 'following', 1)
+                pipe.hincrby(FOLLOW_COUNT_KEY.format(user_id=target_user_id), 'followers', 1)
+                
+                # フォローした瞬間に対象ユーザーの最新投稿をタイムラインに追加
+                self._add_user_posts_to_timeline(user_id, target_user_id, limit=100)
+                
+            elif action == 'unfollow':
+                # フォロー関係を削除
+                pipe.srem(USER_FOLLOWS_KEY.format(user_id=user_id), target_user_id)
+                pipe.srem(USER_FOLLOWERS_KEY.format(user_id=target_user_id), user_id)
+                
+                # カウンターを更新
+                pipe.hincrby(FOLLOW_COUNT_KEY.format(user_id=user_id), 'following', -1)
+                pipe.hincrby(FOLLOW_COUNT_KEY.format(user_id=target_user_id), 'followers', -1)
+                
+                # タイムラインから対象ユーザーの投稿を削除
+                self._remove_user_posts_from_timeline(user_id, target_user_id)
+            
+            pipe.execute()
+            
+            return {
+                'success': True,
+                'action': action,
+                'user_id': user_id,
+                'target_user_id': target_user_id
+            }
+            
+        except Exception as e:
+            logger.error(f"Error processing follow event: {e}")
+            return {'success': False, 'error': str(e)}
+    
+    def _add_user_posts_to_timeline(self, follower_id: str, target_user_id: str, limit: int = 100):
+        """フォロー時に対象ユーザーの投稿をタイムラインに追加"""
+        try:
+            # Firestoreから対象ユーザーの最新投稿を取得
+            posts = db.collection('counts').where('creatorId', '==', target_user_id).order_by('eventDate', direction=firestore.Query.DESCENDING).limit(limit).stream()
+            
+            timeline_data = {}
+            for post in posts:
+                post_data = post.to_dict()
+                # イベント日時をスコアとして使用
+                score = post_data.get('eventDate').timestamp() if post_data.get('eventDate') else 0
+                timeline_data[post.id] = score
+            
+            if timeline_data:
+                self.redis.zadd(TIMELINE_KEY.format(user_id=follower_id), timeline_data)
+                
+        except Exception as e:
+            logger.error(f"Error adding user posts to timeline: {e}")
+    
+    def _remove_user_posts_from_timeline(self, follower_id: str, target_user_id: str):
+        """アンフォロー時に対象ユーザーの投稿をタイムラインから削除"""
+        try:
+            # 対象ユーザーのすべての投稿を取得
+            posts = db.collection('counts').where('creatorId', '==', target_user_id).stream()
+            
+            post_ids = [post.id for post in posts]
+            
+            if post_ids:
+                self.redis.zrem(TIMELINE_KEY.format(user_id=follower_id), *post_ids)
+                
+        except Exception as e:
+            logger.error(f"Error removing user posts from timeline: {e}")
+    
+    def fan_out_to_followers(self, user_id: str, countdown_id: str, score: float):
+        """新しい投稿をフォロワーのタイムラインに配信"""
+        try:
+            # フォロワーリストを取得
+            followers = self.redis.smembers(USER_FOLLOWERS_KEY.format(user_id=user_id))
+            
+            if not followers:
+                return
+            
+            pipe = self.redis.pipeline()
+            
+            # 各フォロワーのタイムラインに追加
+            for follower_id in followers:
+                pipe.zadd(TIMELINE_KEY.format(user_id=follower_id), {countdown_id: score})
+                # タイムライン長制限（最新1000件）
+                pipe.zremrangebyrank(TIMELINE_KEY.format(user_id=follower_id), 0, -1001)
+            
+            # グローバルタイムラインにも追加
+            pipe.zadd(GLOBAL_TIMELINE_KEY, {countdown_id: score})
+            pipe.zremrangebyrank(GLOBAL_TIMELINE_KEY, 0, -5001)  # 最新5000件
+            
+            pipe.execute()
+            
+            logger.info(f"Fanned out countdown {countdown_id} to {len(followers)} followers")
+            
+        except Exception as e:
+            logger.error(f"Error in fan out: {e}")
+    
+    def get_user_timeline(self, user_id: str, limit: int = 50) -> list:
+        """ユーザーのパーソナルタイムラインを取得"""
+        try:
+            # Redisからタイムラインを取得（スコア降順）
+            timeline_ids = self.redis.zrevrange(TIMELINE_KEY.format(user_id=user_id), 0, limit - 1)
+            
+            if not timeline_ids:
+                return []
+            
+            # Firestoreからカウントダウンデータを取得
+            countdowns = []
+            for countdown_id in timeline_ids:
+                doc = db.collection('counts').document(countdown_id).get()
+                if doc.exists:
+                    data = doc.to_dict()
+                    countdown_data = {
+                        'id': doc.id,
+                        'eventName': data.get('eventName', ''),
+                        'description': data.get('description'),
+                        'eventDate': data.get('eventDate').isoformat() if data.get('eventDate') else None,
+                        'category': data.get('category', 'その他'),
+                        'imageUrl': data.get('imageUrl'),
+                        'creatorId': data.get('creatorId'),
+                        'participantsCount': self.get_counter_value(doc.id, 'participants'),
+                        'likesCount': self.get_counter_value(doc.id, 'likes'),
+                        'commentsCount': self.get_counter_value(doc.id, 'comments'),
+                        'viewsCount': self.get_counter_value(doc.id, 'views'),
+                        'trendScore': self.get_trend_score(doc.id),
+                    }
+                    countdowns.append(countdown_data)
+            
+            return countdowns
+            
+        except Exception as e:
+            logger.error(f"Error getting user timeline: {e}")
+            return []
+    
+    def get_global_timeline(self, limit: int = 50) -> list:
+        """グローバルタイムラインを取得"""
+        try:
+            # Redisからタイムラインを取得（スコア降順）
+            timeline_ids = self.redis.zrevrange(GLOBAL_TIMELINE_KEY, 0, limit - 1)
+            
+            if not timeline_ids:
+                return []
+            
+            # Firestoreからカウントダウンデータを取得
+            countdowns = []
+            for countdown_id in timeline_ids:
+                doc = db.collection('counts').document(countdown_id).get()
+                if doc.exists:
+                    data = doc.to_dict()
+                    countdown_data = {
+                        'id': doc.id,
+                        'eventName': data.get('eventName', ''),
+                        'description': data.get('description'),
+                        'eventDate': data.get('eventDate').isoformat() if data.get('eventDate') else None,
+                        'category': data.get('category', 'その他'),
+                        'imageUrl': data.get('imageUrl'),
+                        'creatorId': data.get('creatorId'),
+                        'participantsCount': self.get_counter_value(doc.id, 'participants'),
+                        'likesCount': self.get_counter_value(doc.id, 'likes'),
+                        'commentsCount': self.get_counter_value(doc.id, 'comments'),
+                        'viewsCount': self.get_counter_value(doc.id, 'views'),
+                        'trendScore': self.get_trend_score(doc.id),
+                    }
+                    countdowns.append(countdown_data)
+            
+            return countdowns
+            
+        except Exception as e:
+            logger.error(f"Error getting global timeline: {e}")
+            return []
+    
+    def get_follow_state(self, user_id: str, target_user_id: str) -> bool:
+        """フォロー状態を取得"""
+        try:
+            return self.redis.sismember(USER_FOLLOWS_KEY.format(user_id=user_id), target_user_id)
+        except Exception as e:
+            logger.error(f"Error getting follow state: {e}")
+            return False
+    
+    def get_follow_counts(self, user_id: str) -> Dict[str, int]:
+        """フォロー数・フォロワー数を取得"""
+        try:
+            counts = self.redis.hgetall(FOLLOW_COUNT_KEY.format(user_id=user_id))
+            return {
+                'following': int(counts.get('following', 0)),
+                'followers': int(counts.get('followers', 0))
+            }
+        except Exception as e:
+            logger.error(f"Error getting follow counts: {e}")
+            return {'following': 0, 'followers': 0}
 
 
 # グローバルプロセッサインスタンス
@@ -656,11 +880,15 @@ def get_user_state(user_id: str, countdown_id: str):
         is_participating = bool(processor.redis.get(participation_key))
         is_liked = bool(processor.redis.get(like_key))
         
+        # フォロー状態も取得（countdown_idがユーザーIDとして扱われる場合）
+        is_following = processor.get_follow_state(user_id, countdown_id)
+        
         return jsonify({
             'user_id': user_id,
             'countdown_id': countdown_id,
             'is_participating': is_participating,
             'is_liked': is_liked,
+            'is_following': is_following,
             'timestamp': datetime.now(timezone.utc).isoformat()
         })
         
@@ -942,6 +1170,120 @@ def get_reported_contents():
         
     except Exception as e:
         logger.error(f'Error getting reported contents: {e}')
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/follow-user', methods=['POST'])
+def follow_user():
+    """フォロー/アンフォローAPI"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No JSON data'}), 400
+        
+        user_id = data.get('userId')
+        target_user_id = data.get('targetUserId')
+        action = data.get('action', 'follow')  # 'follow' or 'unfollow'
+        
+        if not all([user_id, target_user_id]):
+            return jsonify({'error': 'Missing userId or targetUserId'}), 400
+        
+        # フォローイベントを処理
+        follow_event = {
+            'userId': user_id,
+            'targetUserId': target_user_id,
+            'action': action
+        }
+        
+        result = processor.process_follow_event(follow_event)
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"Error in follow user: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/user-follows/<user_id>', methods=['GET'])
+def get_user_follows(user_id: str):
+    """ユーザーのフォロー状態取得API"""
+    try:
+        target_user_id = request.args.get('targetUserId')
+        
+        if target_user_id:
+            # 特定のユーザーに対するフォロー状態を取得
+            is_following = processor.get_follow_state(user_id, target_user_id)
+            return jsonify({
+                'user_id': user_id,
+                'target_user_id': target_user_id,
+                'is_following': is_following,
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            })
+        else:
+            # フォロー数・フォロワー数を取得
+            counts = processor.get_follow_counts(user_id)
+            return jsonify({
+                'user_id': user_id,
+                'follow_counts': counts,
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            })
+        
+    except Exception as e:
+        logger.error(f"Error getting user follows: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/followers/<user_id>', methods=['GET'])
+def get_followers(user_id: str):
+    """フォロワー取得API"""
+    try:
+        followers = processor.redis.smembers(USER_FOLLOWERS_KEY.format(user_id=user_id))
+        return jsonify({
+            'user_id': user_id,
+            'followers': list(followers),
+            'count': len(followers),
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting followers: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/timeline/<user_id>', methods=['GET'])
+def get_user_timeline(user_id: str):
+    """パーソナルタイムライン取得API"""
+    try:
+        limit = int(request.args.get('limit', 50))
+        timeline = processor.get_user_timeline(user_id, limit)
+        
+        return jsonify({
+            'user_id': user_id,
+            'countdowns': timeline,
+            'limit': limit,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting user timeline: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/global-timeline', methods=['GET'])
+def get_global_timeline():
+    """グローバルタイムライン取得API"""
+    try:
+        limit = int(request.args.get('limit', 50))
+        timeline = processor.get_global_timeline(limit)
+        
+        return jsonify({
+            'countdowns': timeline,
+            'limit': limit,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting global timeline: {e}")
         return jsonify({'error': str(e)}), 500
 
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/optimized_stream_service.dart';
 import '../services/scalable_participant_service.dart';
+import '../services/timeline_stream_service.dart';
 import '../widgets/enhanced_countdown_card.dart';
 import '../models/countdown.dart';
 
@@ -163,9 +164,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   child: Center(child: CircularProgressIndicator()),
                 )
               : StreamBuilder<List<Countdown>>(
-                  stream: OptimizedStreamService.getBatchedCountdownsStream(
+                  stream: TimelineStreamService.getPersonalTimelineStream(
                     limit: 50,
-                    batchInterval: const Duration(seconds: 3),
                   ),
                   builder: (context, snapshot) {
                     if (snapshot.hasError) {
@@ -179,21 +179,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       );
                     }
 
-                    final allCountdowns = snapshot.data ?? [];
-                    
-                    final participatedCountdowns = allCountdowns
-                        .where((countdown) => _participatedIds.contains(countdown.id))
-                        .toList()
-                      ..sort((a, b) {
-                        final now = DateTime.now();
-                        final diffA = a.eventDate.difference(now);
-                        final diffB = b.eventDate.difference(now);
-                        
-                        if (diffA.isNegative && !diffB.isNegative) return 1;
-                        if (!diffA.isNegative && diffB.isNegative) return -1;
-                        
-                        return diffA.compareTo(diffB);
-                      });
+                    final participatedCountdowns = snapshot.data ?? [];
                     
                     if (participatedCountdowns.isEmpty) {
                       return const SliverToBoxAdapter(

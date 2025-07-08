@@ -105,42 +105,6 @@ class ViewTrackingService {
     }
   }
 
-  /// 【非推奨】レガシー用クリーンアップ機能
-  /// 
-  /// ⚠️ 統一パイプライン移行後は使用禁止
-  /// ⚠️ サーバーサイドで自動実行される
-  @Deprecated('Legacy cleanup disabled - now handled by server-side pipeline')
-  static Future<void> cleanupOldViews({
-    int daysToKeep = 30,
-    int batchSize = 100,
-    int maxOperations = 1000,
-  }) async {
-    throw UnimplementedError('Legacy cleanup disabled for security - handled by server-side pipeline');
-  }
-
-  /// 【非推奨】レガシー用重複統合機能
-  /// 
-  /// ⚠️ 統一パイプライン移行後は使用禁止
-  /// ⚠️ サーバーサイドで自動実行される
-  @Deprecated('Legacy consolidation disabled - now handled by server-side pipeline')
-  static Future<void> consolidateDuplicateViews({
-    int consolidationWindowMinutes = 60,
-    int batchSize = 100,
-  }) async {
-    throw UnimplementedError('Legacy consolidation disabled for security - handled by server-side pipeline');
-  }
-
-  /// 【非推奨】レガシー用内部処理
-  @Deprecated('Legacy internal method disabled')
-  static Future<int> _cleanupCollectionBatchedSafe(
-    String collectionName,
-    String timestampField,
-    DateTime cutoffDate,
-    int batchSize,
-    int maxOperations,
-  ) async {
-    throw UnimplementedError('Legacy internal method disabled for security');
-  }
 
   /// ローカルキャッシュをクリア
   static void clearLocalCache() {

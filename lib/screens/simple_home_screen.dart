@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/simple_stream_service.dart';
 import '../services/scalable_participant_service.dart';
+import '../services/timeline_stream_service.dart';
 import '../widgets/enhanced_countdown_card.dart';
 import '../models/countdown.dart';
 
@@ -138,7 +139,9 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen> {
           // カウントダウンリスト
           Expanded(
             child: StreamBuilder<List<Countdown>>(
-              stream: SimpleStreamService.getCountdownsStream(limit: 50),
+              stream: _showParticipatedOnly 
+                ? TimelineStreamService.getPersonalTimelineStream(limit: 50)
+                : TimelineStreamService.getGlobalTimelineStream(limit: 50),
               builder: (context, snapshot) {
                 print('SimpleHomeScreen - StreamBuilder state: ${snapshot.connectionState}');
                 print('SimpleHomeScreen - Has error: ${snapshot.hasError}');
@@ -180,33 +183,7 @@ class _SimpleHomeScreenState extends State<SimpleHomeScreen> {
                   );
                 }
 
-                final allCountdowns = snapshot.data ?? [];
-                print('SimpleHomeScreen - All countdowns: ${allCountdowns.length}');
-                
-                // 表示するカウントダウンをフィルタリング
-                List<Countdown> displayCountdowns;
-                if (_showParticipatedOnly) {
-                  displayCountdowns = allCountdowns
-                      .where((countdown) => _participatedIds.contains(countdown.id))
-                      .toList();
-                  
-                  // 参加中のカウントダウンを残り時間順にソート
-                  displayCountdowns.sort((a, b) {
-                    final now = DateTime.now();
-                    final diffA = a.eventDate.difference(now);
-                    final diffB = b.eventDate.difference(now);
-                    
-                    // 終了したイベントは後ろに
-                    if (diffA.isNegative && !diffB.isNegative) return 1;
-                    if (!diffA.isNegative && diffB.isNegative) return -1;
-                    
-                    // 残り時間が短い順
-                    return diffA.compareTo(diffB);
-                  });
-                } else {
-                  displayCountdowns = allCountdowns;
-                }
-
+                final displayCountdowns = snapshot.data ?? [];
                 print('SimpleHomeScreen - Display countdowns: ${displayCountdowns.length}');
 
                 if (displayCountdowns.isEmpty) {

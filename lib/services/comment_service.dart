@@ -23,12 +23,6 @@ class CommentService {
     });
   }
 
-  /// 【非推奨】直接コメント作成
-  /// ⚠️ 統一パイプライン移行後は使用禁止
-  @Deprecated('Use createCommentEvent() instead')
-  static Future<void> addComment(Comment comment) async {
-    throw UnimplementedError('Direct comment creation disabled for security - use unified pipeline');
-  }
 
   /// 【統一パイプライン】コメント作成イベント送信
   static Future<bool> createCommentEvent(Comment comment) async {
@@ -48,12 +42,6 @@ class CommentService {
     }
   }
 
-  /// 【非推奨】直接コメント削除
-  /// ⚠️ 統一パイプライン移行後は使用禁止
-  @Deprecated('Use deleteCommentEvent() instead')
-  static Future<void> deleteComment(String commentId) async {
-    throw UnimplementedError('Direct comment deletion disabled for security - use unified pipeline');
-  }
 
   /// 【統一パイプライン】コメント削除イベント送信
   static Future<bool> deleteCommentEvent(String commentId, String countdownId) async {

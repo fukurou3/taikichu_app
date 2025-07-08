@@ -189,6 +189,31 @@ class UnifiedAnalyticsService {
     );
   }
 
+  /// フォロー/アンフォローイベント送信
+  static Future<bool> sendFollowEvent(String targetUserId, {String? action}) async {
+    return await sendEvent(
+      type: 'follow_toggle',
+      countdownId: targetUserId, // targetUserIdをcountdownIdパラメータで送信
+      metadata: {
+        'action': action ?? 'toggle',
+        'targetUserId': targetUserId,
+      },
+    );
+  }
+
+  /// カウントダウン作成イベント送信
+  static Future<bool> sendCountdownCreatedEvent(String countdownId, {Map<String, dynamic>? countdownData}) async {
+    return await sendEvent(
+      type: 'countdown_created',
+      countdownId: countdownId,
+      metadata: {
+        'action': 'create',
+        'source': 'user_creation',
+        ...?countdownData,
+      },
+    );
+  }
+
   /// バッチイベント送信（複数イベントの一括送信）
   static Future<List<bool>> sendBatchEvents(List<Map<String, dynamic>> events) async {
     final futures = events.map((event) => sendEvent(

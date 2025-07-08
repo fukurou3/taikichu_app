@@ -73,14 +73,6 @@ class ScalableLikeService {
     }
   }
 
-  /// 【非推奨】レガシー用Firestore読み取り
-  /// 
-  /// ⚠️ 統一パイプライン移行後は使用禁止
-  /// ⚠️ 高コストのため削除予定
-  @Deprecated('Use getLikesCount() with unified pipeline instead')
-  static Future<int> getLikesCountDirect(String countdownId) async {
-    throw UnimplementedError('Legacy direct access disabled for cost safety');
-  }
 
   /// 【統一パイプライン】ユーザーのいいね一覧を取得
   /// 

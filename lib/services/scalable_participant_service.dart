@@ -76,14 +76,6 @@ class ScalableParticipantService {
     }
   }
 
-  /// 【非推奨】レガシー用Firestore読み取り
-  /// 
-  /// ⚠️ 統一パイプライン移行後は使用禁止
-  /// ⚠️ 高コストのため削除予定
-  @Deprecated('Use getParticipantsCount() with unified pipeline instead')
-  static Future<int> getParticipantsCountDirect(String countdownId) async {
-    throw UnimplementedError('Legacy direct access disabled for cost safety');
-  }
 
   /// ユーザーが参加しているカウントダウンIDリストを取得
   static Future<List<String>> getUserParticipatedCountdowns() async {
