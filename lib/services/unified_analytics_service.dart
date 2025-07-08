@@ -1,6 +1,7 @@
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:uuid/uuid.dart';
 
 /// 統一分析サービス
@@ -35,32 +36,24 @@ class UnifiedAnalyticsService {
     try {
       final user = FirebaseAuth.instance.currentUser;
       
-      final event = {
-        'eventId': _generateEventId(type, countdownId),
-        'type': type,
+      final eventData = {
         'countdownId': countdownId,
         'userId': user?.uid,
-        'timestamp': DateTime.now().toIso8601String(),
-        'metadata': {
-          'source': 'client_direct',
-          'session_id': sessionId,
-          'app_version': '1.0.0',
-          ...?metadata,
-        },
+        ...?metadata,
       };
       
       // 高速パス: Cloud Run直接送信
       if (!forcePubSub) {
-        final success = await _sendDirectToCloudRun(event);
+        final success = await _sendDirectToCloudRun(type, eventData);
         if (success) {
           print('UnifiedAnalyticsService - Event sent via direct path: $type');
           return true;
         }
       }
       
-      // フォールバック: Pub/Sub経由送信
-      print('UnifiedAnalyticsService - Fallback to Pub/Sub: $type');
-      return await _sendViaPubSub(event);
+      // フォールバック: 統一HTTPハンドラー経由
+      print('UnifiedAnalyticsService - Fallback to unified handler: $type');
+      return await _sendViaUnifiedHandler(type, eventData, metadata);
       
     } catch (e) {
       print('UnifiedAnalyticsService - Error sending event: $e');
@@ -69,8 +62,22 @@ class UnifiedAnalyticsService {
   }
 
   /// Cloud Run直接送信（高速パス）
-  static Future<bool> _sendDirectToCloudRun(Map<String, dynamic> event) async {
+  static Future<bool> _sendDirectToCloudRun(String eventType, Map<String, dynamic> eventData) async {
     try {
+      final event = {
+        'eventId': _generateEventId(eventType, eventData['countdownId']),
+        'type': eventType,
+        'countdownId': eventData['countdownId'],
+        'userId': eventData['userId'],
+        'timestamp': DateTime.now().toIso8601String(),
+        'metadata': {
+          'source': 'client_direct',
+          'session_id': sessionId,
+          'app_version': '1.0.0',
+          ...?eventData,
+        },
+      };
+      
       final response = await _httpClient
           .post(
             Uri.parse('$_cloudRunUrl/events'),
@@ -95,34 +102,56 @@ class UnifiedAnalyticsService {
     }
   }
 
-  /// Pub/Sub経由送信（フォールバック）
-  static Future<bool> _sendViaPubSub(Map<String, dynamic> event) async {
+  /// 統一HTTPハンドラー経由送信（フォールバック）
+  static Future<bool> _sendViaUnifiedHandler(String eventType, Map<String, dynamic> eventData, Map<String, dynamic>? metadata) async {
     try {
-      // Firebase Functions のpublishViewEventを使用
-      // 注意: 実際の実装では cloud_functions パッケージを使用
+      // 新しい統一HTTPハンドラーを使用
+      final functions = FirebaseFunctions.instance;
+      final callable = functions.httpsCallable('unifiedEventHandler');
       
-      // 一時的な実装: HTTP経由でFirebase Functionsを呼び出し
-      final functionsUrl = 'https://us-central1-taikichu-app-c8dcd.cloudfunctions.net/publishViewEvent';
+      final result = await callable.call({
+        'eventType': eventType,
+        'eventData': eventData,
+        'metadata': {
+          'source': 'client_unified_handler',
+          'session_id': sessionId,
+          'app_version': '1.0.0',
+          'userAgent': 'Flutter-App/1.0.0',
+          ...?metadata,
+        },
+      });
       
-      final response = await _httpClient
-          .post(
-            Uri.parse(functionsUrl),
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer ${await _getIdToken()}',
-            },
-            body: jsonEncode({
-              'data': {
-                'countdownId': event['countdownId'],
-                'metadata': event['metadata'],
-              },
-            }),
-          )
-          .timeout(const Duration(seconds: 10));
-
-      return response.statusCode == 200;
+      return result.data['success'] == true;
     } catch (e) {
-      print('UnifiedAnalyticsService - Pub/Sub send error: $e');
+      print('UnifiedAnalyticsService - Unified handler error: $e');
+      
+      // 最終フォールバック: 従来のpublishViewEventを使用
+      if (eventType == 'view') {
+        return await _sendViaLegacyViewEvent(eventData, metadata);
+      }
+      
+      return false;
+    }
+  }
+  
+  /// レガシーview eventエンドポイント（最終フォールバック）
+  static Future<bool> _sendViaLegacyViewEvent(Map<String, dynamic> eventData, Map<String, dynamic>? metadata) async {
+    try {
+      final functions = FirebaseFunctions.instance;
+      final callable = functions.httpsCallable('publishViewEvent');
+      
+      final result = await callable.call({
+        'countdownId': eventData['countdownId'],
+        'metadata': {
+          'source': 'client_legacy_fallback',
+          'session_id': sessionId,
+          ...?metadata,
+        },
+      });
+      
+      return result.data['success'] == true;
+    } catch (e) {
+      print('UnifiedAnalyticsService - Legacy view event error: $e');
       return false;
     }
   }
@@ -209,20 +238,93 @@ class UnifiedAnalyticsService {
       metadata: {
         'action': 'create',
         'source': 'user_creation',
+        'eventName': countdownData?['eventName'],
+        'eventDate': countdownData?['eventDate'],
+        'category': countdownData?['category'],
         ...?countdownData,
+      },
+    );
+  }
+  
+  /// レポート作成イベント送信
+  static Future<bool> sendReportCreatedEvent(String targetId, String targetType, String reportType, {Map<String, dynamic>? reportData}) async {
+    return await sendEvent(
+      type: 'report_created',
+      countdownId: targetId, // targetIdをcountdownIdパラメータで送信
+      metadata: {
+        'targetType': targetType,
+        'targetId': targetId,
+        'reportType': reportType,
+        'source': 'user_report',
+        ...?reportData,
+      },
+    );
+  }
+  
+  /// モデレーションアクションイベント送信
+  static Future<bool> sendModerationActionEvent(String targetId, String actionType, String moderatorId, {Map<String, dynamic>? actionData}) async {
+    return await sendEvent(
+      type: 'moderation_action',
+      countdownId: targetId, // targetIdをcountdownIdパラメータで送信
+      metadata: {
+        'targetId': targetId,
+        'actionType': actionType,
+        'moderatorId': moderatorId,
+        'source': 'moderation_system',
+        ...?actionData,
       },
     );
   }
 
   /// バッチイベント送信（複数イベントの一括送信）
   static Future<List<bool>> sendBatchEvents(List<Map<String, dynamic>> events) async {
-    final futures = events.map((event) => sendEvent(
-      type: event['type'],
-      countdownId: event['countdownId'],
-      metadata: event['metadata'],
-    ));
-    
-    return await Future.wait(futures);
+    try {
+      // 統一バッチハンドラーを使用
+      final functions = FirebaseFunctions.instance;
+      final callable = functions.httpsCallable('batchEventHandler');
+      
+      final result = await callable.call({
+        'events': events.map((event) => {
+          'eventType': event['type'],
+          'eventData': {
+            'countdownId': event['countdownId'],
+            'userId': FirebaseAuth.instance.currentUser?.uid,
+            ...?event['metadata'],
+          },
+        }).toList(),
+        'metadata': {
+          'source': 'client_batch_handler',
+          'session_id': sessionId,
+          'app_version': '1.0.0',
+          'batchSize': events.length,
+        },
+      });
+      
+      if (result.data['success'] == true) {
+        final results = result.data['results'] as List<dynamic>;
+        return results.map((r) => r['success'] == true).toList().cast<bool>();
+      } else {
+        // フォールバック: 個別送信
+        final futures = events.map((event) => sendEvent(
+          type: event['type'],
+          countdownId: event['countdownId'],
+          metadata: event['metadata'],
+        ));
+        
+        return await Future.wait(futures);
+      }
+    } catch (e) {
+      print('UnifiedAnalyticsService - Batch event error: $e');
+      
+      // フォールバック: 個別送信
+      final futures = events.map((event) => sendEvent(
+        type: event['type'],
+        countdownId: event['countdownId'],
+        metadata: event['metadata'],
+      ));
+      
+      return await Future.wait(futures);
+    }
   }
 
   /// システム健康状態チェック
