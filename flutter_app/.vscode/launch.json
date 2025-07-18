@@ -1,0 +1,16 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Flutter (Debug Web)",
+            "request": "launch",
+            "type": "dart",
+            "program": "lib/main.dart",
+            "deviceId": "web-server",
+            "args": [
+                "--web-hostname=localhost",
+                "--web-port=3000"
+            ]
+        }
+    ]
+}
