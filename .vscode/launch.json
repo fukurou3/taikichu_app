@@ -10,6 +10,17 @@
             "name": "localhost に対して Chrome を起動する",
             "url": "http://localhost:8080",
             "webRoot": "${workspaceFolder}"
+        },
+        {
+            "name": "Flutter (Debug Web)",
+            "request": "launch",
+            "type": "dart",
+            "program": "lib/main.dart",
+            "deviceId": "web-server",
+            "args": [
+                "--web-hostname=localhost",
+                "--web-port=3000"
+            ]
         }
     ]
 }
