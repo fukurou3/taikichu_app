@@ -1,0 +1,12 @@
+{
+  "dart.flutterSdkPath": null,
+  "dart.debugExternalLibraries": true,
+  "dart.debugExtensionBackendProtocol": "ws",
+  "dart.debugSdkLibraries": true,
+  "dart.flutterHotReloadOnSave": "always",
+  "dart.previewFlutterUiGuides": true,
+  "dart.previewFlutterUiGuidesCustomTracking": true,
+  "files.associations": {
+    "*.dart": "dart"
+  }
+}
