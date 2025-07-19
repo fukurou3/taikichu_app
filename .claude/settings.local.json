@@ -3,7 +3,10 @@
     "allow": [
       "Bash(mkdir:*)",
       "Bash(flutter run:*)",
-      "Bash(flutter pub:*)"
+      "Bash(flutter pub:*)",
+      "Bash(flutter analyze:*)",
+      "Bash(start chrome http://localhost:8080)",
+      "Bash(mv:*)"
     ],
     "deny": []
   }
